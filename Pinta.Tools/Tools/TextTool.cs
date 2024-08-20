@@ -137,6 +137,7 @@ public sealed class TextTool : BaseTool
 	private Gtk.Separator outline_sep = null!;
 	private Gtk.SpinButton outline_width = null!;
 	private Gtk.Label outline_width_label = null!;
+	private Gtk.ToggleButton outline_draw_order = null!;
 
 	private const string FONT_SETTING = "text-font";
 	private const string BOLD_SETTING = "text-bold";
@@ -145,6 +146,7 @@ public sealed class TextTool : BaseTool
 	private const string ALIGNMENT_SETTING = "text-alignment";
 	private const string STYLE_SETTING = "text-style";
 	private const string OUTLINE_WIDTH_SETTING = "text-outline-width";
+	private const string OUTLINE_DRAW_ORDER = "text-outline-draw-order";
 
 	protected override void OnBuildToolBar (Gtk.Box tb)
 	{
@@ -293,6 +295,20 @@ public sealed class TextTool : BaseTool
 
 		outline_width.Visible = outline_width_label.Visible = outline_sep.Visible = StrokeText;
 
+		if (outline_draw_order == null) {
+			outline_draw_order = new Gtk.ToggleButton {
+				IconName = Pinta.Resources.Icons.LayerMoveUp,
+				TooltipText = Translations.GetString ("Draw Text Before Outline"),
+				CanFocus = false,
+				Active = Settings.GetSetting (OUTLINE_DRAW_ORDER, false),
+			};
+			outline_draw_order.OnToggled += HandleOutlineDrawOrderButton;
+		}
+
+		outline_draw_order.Visible = StrokeText && FillText;
+
+		tb.Append (outline_draw_order);
+
 		UpdateFont ();
 
 		if (workspace.HasOpenDocuments) {
@@ -404,11 +420,17 @@ public sealed class TextTool : BaseTool
 	private void HandleBoldButtonToggled (object? sender, EventArgs e)
 	{
 		outline_width.Visible = outline_width_label.Visible = outline_sep.Visible = StrokeText;
+		outline_draw_order.Visible = StrokeText && FillText;
 
 		UpdateFont ();
 	}
 
 	private void HandleSelectedLayerChanged (object? sender, EventArgs e)
+	{
+		UpdateFont ();
+	}
+
+	private void HandleOutlineDrawOrderButton (object? sender, EventArgs e)
 	{
 		UpdateFont ();
 	}
@@ -439,6 +461,9 @@ public sealed class TextTool : BaseTool
 
 	private bool BackgroundFill
 		=> fill_button.SelectedItem.GetTagOrDefault (0) == 3;
+
+	private bool DrawOutlineBeforeText
+		=> outline_draw_order.Active;
 
 	#endregion
 
@@ -1001,7 +1026,7 @@ public sealed class TextTool : BaseTool
 		}
 
 		// Draw the text
-		if (FillText)
+		if (FillText && !DrawOutlineBeforeText)
 			PangoCairo.Functions.ShowLayout (g, CurrentTextLayout.Layout);
 
 		if (FillText && StrokeText) {
@@ -1017,6 +1042,14 @@ public sealed class TextTool : BaseTool
 			PangoCairo.Functions.LayoutPath (g, CurrentTextLayout.Layout);
 			g.Stroke ();
 		}
+
+		if (FillText && DrawOutlineBeforeText) {
+			g.SetSourceColor (palette.PrimaryColor);
+			selection?.Clip (g);
+			g.MoveTo (CurrentTextEngine.Origin.X, CurrentTextEngine.Origin.Y);
+			PangoCairo.Functions.ShowLayout (g, CurrentTextLayout.Layout);
+		}
+
 
 		if (showCursor) {
 
