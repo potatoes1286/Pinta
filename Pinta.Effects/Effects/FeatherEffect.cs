@@ -55,7 +55,7 @@ public sealed class FeatherEffect : BaseEffect
 				var src_row = src_data.Slice (y * src_width + roi.Left, roi.Width);
 				var dst_row = dst_data.Slice (y * dst_width + roi.Left, roi.Width);
 				for (int x = roi.Left; x <= roi.Right; x++) {
-					if(x < dst_row.Length)
+					if (x < dst_row.Length)
 						dst_row[x].Bgra = src_row[x].Bgra;
 				}
 			}

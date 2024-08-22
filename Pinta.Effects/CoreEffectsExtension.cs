@@ -67,7 +67,7 @@ internal sealed class CoreEffectsExtension : IExtension
 		PintaCore.Effects.RegisterEffect (new FrostedGlassEffect (services));
 		PintaCore.Effects.RegisterEffect (new GaussianBlurEffect (services));
 		PintaCore.Effects.RegisterEffect (new GlowEffect (services));
-		PintaCore.Effects.RegisterEffect (new FeatherEffect(services));
+		PintaCore.Effects.RegisterEffect (new FeatherEffect (services));
 		PintaCore.Effects.RegisterEffect (new InkSketchEffect (services));
 		PintaCore.Effects.RegisterEffect (new JuliaFractalEffect (services));
 		PintaCore.Effects.RegisterEffect (new MandelbrotFractalEffect (services));
