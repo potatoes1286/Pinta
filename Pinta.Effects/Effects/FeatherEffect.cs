@@ -62,7 +62,7 @@ public sealed class FeatherEffect : BaseEffect
 			for (int y = roi.Top; y <= roi.Bottom; ++y) {
 				for (int x = roi.Left; x <= roi.Right; x++) {
 					PointI potentialBorderPixel = new (x, y);
-					if (src.GetColorBgra (src_data, src_width, potentialBorderPixel).A == 0) {
+					if (src.GetColorBgra (src_data, src_width, potentialBorderPixel).A <= Data.TransparencyThreshold) {
 						for (int sx = x - 1; sx <= x + 1; sx++) {
 							for (int sy = y - 1; sy <= y + 1; sy++) {
 								PointI pixel = new (sx, sy);
@@ -102,7 +102,10 @@ public sealed class FeatherEffect : BaseEffect
 
 	public sealed class FeatherData : EffectData
 	{
-		[Caption ("Radius"), MinimumValue (1), MaximumValue (20)]
+		[Caption ("Radius"), MinimumValue (1), MaximumValue (100)]
 		public int Radius { get; set; } = 6;
+
+		[Caption ("Transparency Threshold"), MinimumValue (0), MaximumValue (255)]
+		public int TransparencyThreshold { get; set; } = 20;
 	}
 }
