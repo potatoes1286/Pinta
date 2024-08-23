@@ -1,4 +1,3 @@
-
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -10,10 +9,8 @@ namespace Pinta.Effects;
 
 public sealed class FeatherEffect : BaseEffect
 {
-	private readonly UserBlendOps.ScreenBlendOp screen_blend_op;
-	private readonly IServiceProvider services;
 
-	public override string Icon => Pinta.Resources.Icons.EffectsPhotoGlow;
+	public override string Icon => Pinta.Resources.Icons.EffectsDefault;
 
 	public sealed override bool IsTileable => true;
 
@@ -21,7 +18,7 @@ public sealed class FeatherEffect : BaseEffect
 
 	public override bool IsConfigurable => true;
 
-	public override string EffectMenuCategory => Translations.GetString ("Blurs");
+	public override string EffectMenuCategory => Translations.GetString ("Stylize");
 
 	public FeatherData Data => (FeatherData) EffectData!;  // NRT - Set in constructor
 
@@ -31,8 +28,6 @@ public sealed class FeatherEffect : BaseEffect
 	{
 		chrome = services.GetService<IChromeService> ();
 		EffectData = new FeatherData ();
-		screen_blend_op = new UserBlendOps.ScreenBlendOp ();
-		this.services = services;
 	}
 
 	public override void LaunchConfiguration ()
@@ -49,7 +44,6 @@ public sealed class FeatherEffect : BaseEffect
 
 		// reset dest to src
 		// Removing this causes preview to not update to lower radius levels
-
 		foreach (RectangleI roi in rois) {
 			for (int y = roi.Top; y <= roi.Bottom; ++y) {
 				var src_row = src_data.Slice (y * src_width + roi.Left, roi.Width);
@@ -63,9 +57,7 @@ public sealed class FeatherEffect : BaseEffect
 
 
 		// Collect a list of pixels that surround the object
-
 		List<PointI> borderPixels = new List<PointI> ();
-
 		foreach (RectangleI roi in rois) {
 			for (int y = roi.Top; y <= roi.Bottom; ++y) {
 				for (int x = roi.Left; x <= roi.Right; x++) {
@@ -88,23 +80,20 @@ public sealed class FeatherEffect : BaseEffect
 		}
 
 		// For each pixel, lower alpha based off distance to border pixel
-
-		foreach (RectangleI roi in rois) {
-			foreach (var borderPixel in borderPixels) {
-				for (int y = borderPixel.Y - radius; y <= borderPixel.Y + radius; ++y) {
-					for (int x = borderPixel.X - radius; x <= borderPixel.X + radius; x++) {
-						// Within manhattan distance to narrow points down
-						var dx = borderPixel.X - x;
-						var dy = borderPixel.Y - y;
-						var distance = new PointI (dx, dy).Magnitude ();
-						// If within actual distance
-						if (distance <= radius) {
-							int pixel_index = y * src_width + x;
-							double mult = distance / radius;
-							byte alpha = (byte) (src_data[pixel_index].A * mult);
-							if (alpha < dst_data[pixel_index].A)
-								dst_data[pixel_index].Bgra = src_data[pixel_index].NewAlpha (alpha).ToPremultipliedAlpha ().Bgra;
-						}
+		foreach (var borderPixel in borderPixels) {
+			for (int y = borderPixel.Y - radius; y <= borderPixel.Y + radius; ++y) {
+				for (int x = borderPixel.X - radius; x <= borderPixel.X + radius; x++) {
+					// Within manhattan distance to narrow points down
+					var dx = borderPixel.X - x;
+					var dy = borderPixel.Y - y;
+					float distance = MathF.Sqrt (dx * dx + dy * dy);
+					// If within actual distance
+					if (distance <= radius) {
+						int pixel_index = y * src_width + x;
+						float mult = distance / radius;
+						byte alpha = (byte) (src_data[pixel_index].A * mult);
+						if (alpha < dst_data[pixel_index].A)
+							dst_data[pixel_index].Bgra = src_data[pixel_index].NewAlpha (alpha).ToPremultipliedAlpha ().Bgra;
 					}
 				}
 			}
