@@ -53,12 +53,66 @@ public sealed class MoveSelectedTool : BaseTransformTool
 		"\nUse arrow keys to move selected content by a single pixel.",
 		system_manager.CtrlLabel ());
 
+
+	#region ToolBar
+
+	private Gtk.Button? center_button = null;
+
+	protected override void OnBuildToolBar (Gtk.Box tb)
+	{
+		base.OnBuildToolBar (tb);
+
+		if (center_button == null) {
+			center_button = new Gtk.Button {
+				TooltipText = Translations.GetString ("Center Selection"),
+				IconName = Pinta.Resources.Icons.ToolMove,
+			};
+			center_button.OnClicked += HandleCenterSelectionPressed;
+		}
+		tb.Append (center_button);
+	}
+
+	#endregion
+
+	#region Toolbar Handlers
+
+	private void HandleCenterSelectionPressed (object? sender, EventArgs e)
+	{
+		var document = PintaCore.Workspace.ActiveDocument;
+
+		original_selection = document.Selection.Clone ();
+		original_transform.InitMatrix (document.Layers.SelectionLayer.Transform);
+
+		var p1 = original_selection.Origin;
+		var p2 = original_selection.End;
+
+		var selectionCenter = new PointI ((int) (p1.X + p2.X) / 2, (int) (p1.Y + p2.Y) / 2);
+		var documentCenter = new PointI (document.ImageSize.Width / 2, document.ImageSize.Height / 2);
+		var translation = documentCenter - selectionCenter;
+
+		MoveSelection (document, translation.X, translation.Y);
+	}
+
+	#endregion
+
 	public override Gdk.Cursor DefaultCursor => Gdk.Cursor.NewFromTexture (Resources.GetIcon (Pinta.Resources.Icons.ToolMoveCursor), 0, 0, null);
 	public override Gdk.Key ShortcutKey => Gdk.Key.M;
 	public override int Priority => 5;
 
 	protected override RectangleD GetSourceRectangle (Document document)
 		=> document.Selection.SelectionPath.GetBounds ().ToDouble ();
+
+	// Moves the selection by x / y in one call.
+	// You can grab the document using PintaCore.Workspace.ActiveDocument
+	private void MoveSelection (Document document, double x, double y)
+	{
+		var transform = CairoExtensions.CreateIdentityMatrix ();
+		transform.Translate (x, y);
+
+		OnStartTransform (document);
+		OnUpdateTransform (document, transform);
+		OnFinishTransform (document, transform);
+	}
 
 	protected override void OnStartTransform (Document document)
 	{
