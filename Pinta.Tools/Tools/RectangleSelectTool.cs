@@ -25,6 +25,7 @@
 // THE SOFTWARE.
 
 using System;
+using Cairo;
 using Pinta.Core;
 
 namespace Pinta.Tools;
@@ -45,4 +46,97 @@ public sealed class RectangleSelectTool : SelectTool
 	{
 		document.Selection.CreateRectangleSelection (r);
 	}
+
+	#region ToolBar
+
+	private Gtk.Button? select_layer_content_button = null;
+	private Gtk.Button? select_image_content_button = null;
+
+	protected override void OnBuildToolBar (Gtk.Box tb)
+	{
+		base.OnBuildToolBar (tb);
+
+		if (select_layer_content_button == null) {
+			select_layer_content_button = new Gtk.Button {
+				TooltipText = Translations.GetString ("Select Layer Content"),
+				IconName = Pinta.Resources.Icons.ToolMoveSelection
+			};
+			select_layer_content_button.OnClicked += HandleSelectLayerContentPressed;
+		}
+		tb.Append (select_layer_content_button);
+
+		if (select_image_content_button == null) {
+			select_image_content_button = new Gtk.Button {
+				TooltipText = Translations.GetString ("Select Image Content"),
+				IconName = Pinta.Resources.Icons.ToolMoveSelection
+			};
+			select_image_content_button.OnClicked += HandleSelectImageContentPressed;
+		}
+		tb.Append (select_image_content_button);
+	}
+
+	#endregion
+
+	#region Toolbar Handlers
+
+	private void HandleSelectLayerContentPressed (object? sender, EventArgs e)
+	{
+		Document doc = PintaCore.Workspace.ActiveDocument;
+		var image = doc.Layers.CurrentUserLayer.Surface;
+
+		SelectContent (doc, image);
+	}
+
+	private void HandleSelectImageContentPressed (object? sender, EventArgs e)
+	{
+		Document doc = PintaCore.Workspace.ActiveDocument;
+		var image = doc.GetFlattenedImage ();
+
+		SelectContent (doc, image);
+	}
+
+	private void SelectContent (Document doc, ImageSurface image)
+	{
+		RectangleI rect = image.GetBounds ();
+		Color border_color = image.GetColorBgra (PointI.Zero).ToCairoColor ();
+
+		// Top down.
+		for (int y = 0; y < image.Height; ++y) {
+			if (!ImageActions.IsConstantRow (image, border_color, y))
+				break;
+
+			rect = rect with { Y = rect.Y + 1, Height = rect.Height - 1 };
+		}
+
+		// Bottom up.
+		for (int y = rect.Bottom; y >= rect.Top; --y) {
+			if (!ImageActions.IsConstantRow (image, border_color, y))
+				break;
+
+			rect = rect with { Height = rect.Height - 1 };
+		}
+
+		// Left side.
+		for (int x = 0; x < image.Width; ++x) {
+			if (!ImageActions.IsConstantColumn (image, border_color, rect, x))
+				break;
+
+			rect = rect with { X = rect.X + 1, Width = rect.Width - 1 };
+		}
+
+		// Right side.
+		for (int x = rect.Right; x >= rect.Left; --x) {
+			if (!ImageActions.IsConstantColumn (image, border_color, rect, x))
+				break;
+
+			rect = rect with { Width = rect.Width - 1 };
+		}
+
+		if (rect.Width == 0 || rect.Height == 0)
+			rect = new RectangleI (0, 0, image.Width, image.Height);
+
+		RectToSelection (doc, rect);
+	}
+
+	#endregion
 }

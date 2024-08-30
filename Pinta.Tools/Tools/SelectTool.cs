@@ -184,6 +184,32 @@ public abstract class SelectTool : BaseTool
 		UpdateCursor (document, e.WindowPoint);
 	}
 
+
+	protected void RectToSelection (Document doc, RectangleI rect)
+	{
+		hist = new SelectionHistoryItem (Icon, Name);
+		hist.TakeSnapshot ();
+
+		doc.PreviousSelection = doc.Selection.Clone ();
+		doc.Selection.SelectionPolygons.Clear ();
+
+		// Do a full redraw for modes that can wipe existing selections outside the rectangle being drawn.
+		if (combine_mode == CombineMode.Replace || combine_mode == CombineMode.Intersect) {
+			var size = doc.ImageSize;
+			last_dirty = new RectangleI (0, 0, size.Width, size.Height);
+		}
+
+		SelectionModeHandler.PerformSelectionMode (doc, combine_mode, doc.Selection.SelectionPolygons);
+		doc.Selection.Origin = new PointD (rect.Left, rect.Top);
+		doc.Selection.End = new PointD (rect.Right + 1, rect.Bottom + 1);
+		UpdateHandlePositions ();
+		ReDraw (doc);
+		if (hist != null) {
+			doc.History.PushNewItem (hist);
+			hist = null;
+		}
+	}
+
 	protected override void OnActivated (Document? document)
 	{
 		base.OnActivated (document);
