@@ -123,7 +123,19 @@ public abstract class BaseTransformTool : BaseTool
 			transform.Translate (-center.X, -center.Y);
 
 		} else {
-			transform.Translate (dx, dy);
+
+			if (constrain) {
+				// Constrains the angle from original point to moved location to a set of straight lines for easy moving
+
+				double len = Math.Sqrt (dx * dx + dy * dy);
+				double theta = Math.Atan2 (dy, dx);
+				theta = Math.Round (12 * theta / Math.PI) * Math.PI / 12;
+				var new_location = new PointD ((original_point.X + len * Math.Cos (theta)), (original_point.Y + len * Math.Sin (theta)));
+				var dpos = new_location - original_point;
+				transform.Translate (dpos.X, dpos.Y);
+			} else {
+				transform.Translate (dx, dy);
+			}
 		}
 
 		OnUpdateTransform (document, transform);
