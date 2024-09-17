@@ -1,21 +1,21 @@
-// 
+//
 // StatusBarColorPaletteWidget.cs
-//  
+//
 // Author:
 //       Jonathan Pobst <monkey@jpobst.com>
-// 
+//
 // Copyright (c) 2020 Jonathan Pobst
-// 
+//
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
 // in the Software without restriction, including without limitation the rights
 // to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 // copies of the Software, and to permit persons to whom the Software is
 // furnished to do so, subject to the following conditions:
-// 
+//
 // The above copyright notice and this permission notice shall be included in
 // all copies or substantial portions of the Software.
-// 
+//
 // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 // IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -73,12 +73,13 @@ public sealed class StatusBarColorPaletteWidget : Gtk.DrawingArea
 
 	private void HandleClick (PointD point, uint button)
 	{
+		Console.WriteLine("WEE!");
 		switch (GetElementAtPoint (point)) {
 			case WidgetElement.PrimaryColor:
-				PintaCore.Palette.PrimaryColor = GetUserChosenColor (PintaCore.Palette.PrimaryColor, Translations.GetString ("Choose Primary Color"));
+				/*PintaCore.Palette.PrimaryColor = */GetUserChosenColor (PintaCore.Palette.PrimaryColor, Translations.GetString ("Choose Primary Color"));
 				break;
 			case WidgetElement.SecondaryColor:
-				PintaCore.Palette.SecondaryColor = GetUserChosenColor (PintaCore.Palette.SecondaryColor, Translations.GetString ("Choose Secondary Color"));
+				/*PintaCore.Palette.SecondaryColor = */GetUserChosenColor (PintaCore.Palette.SecondaryColor, Translations.GetString ("Choose Secondary Color"));
 				break;
 			case WidgetElement.SwapColors:
 				var temp = PintaCore.Palette.PrimaryColor;
@@ -279,7 +280,14 @@ public sealed class StatusBarColorPaletteWidget : Gtk.DrawingArea
 
 	private static Color GetUserChosenColor (Color initialColor, string title)
 	{
-		var ccd = Gtk.ColorChooserDialog.New (title, PintaCore.Chrome.MainWindow);
+		ColorPickerDialog dialog = new ColorPickerDialog (PintaCore.Chrome, PintaCore.Workspace, PintaCore.Palette);
+
+		dialog.OnResponse += (_, args) => {
+			dialog.Destroy ();
+		};
+
+		dialog.Show ();
+		/*var ccd = Gtk.ColorChooserDialog.New (title, PintaCore.Chrome.MainWindow);
 		ccd.UseAlpha = true;
 		ccd.SetColor (initialColor);
 
@@ -289,8 +297,10 @@ public sealed class StatusBarColorPaletteWidget : Gtk.DrawingArea
 		if (response == Gtk.ResponseType.Ok)
 			ccd.GetColor (out result);
 
-		ccd.Destroy ();
-
+		ccd.Destroy ();*/
+		Cairo.Color result = initialColor;
+		var e = PintaCore.Palette.PrimaryColor;
+		Console.WriteLine($"{e.R}, {e.B}, {e.G}, {e.A}");
 		return result;
 	}
 

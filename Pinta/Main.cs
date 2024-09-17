@@ -104,7 +104,7 @@ internal sealed class MainClass
 
 			// For debugging, run the garbage collector much more frequently.
 			// This can be useful to detect certain memory management issues in the GTK bindings.
-			if (debug) {
+			if (true) {
 				GLib.Functions.TimeoutAdd (0, 100, () => {
 					GC.Collect ();
 					GC.WaitForPendingFinalizers ();
