@@ -298,9 +298,16 @@ public sealed class StatusBarColorPaletteWidget : Gtk.DrawingArea
 			ccd.GetColor (out result);
 
 		ccd.Destroy ();*/
+
+		var response = dialog.RunBlocking ();
+		if (response == Gtk.ResponseType.Ok) {
+			PintaCore.Palette.PrimaryColor = dialog.primaryColor;
+			PintaCore.Palette.SecondaryColor = dialog.secondaryColor;
+		}
+
+		dialog.Destroy ();
+
 		Cairo.Color result = initialColor;
-		var e = PintaCore.Palette.PrimaryColor;
-		Console.WriteLine($"{e.R}, {e.B}, {e.G}, {e.A}");
 		return result;
 	}
 

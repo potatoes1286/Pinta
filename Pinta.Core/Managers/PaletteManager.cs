@@ -104,8 +104,6 @@ public sealed class PaletteManager : IPaletteService
 	// This allows callers to bypass affecting the recently used list
 	public void SetColor (bool setPrimary, Color color, bool addToRecent = true)
 	{
-		var e = color;
-		Console.WriteLine($"{e.R}, {e.B}, {e.G}, {e.A}");
 		if (setPrimary && !primary.Equals (color)) {
 			primary = color;
 

@@ -176,7 +176,13 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 	private readonly PaletteManager palette;
 	private readonly WorkspaceManager workspace;
 
-	int ColorCircleRadius = 200 / 2;
+
+	private int ColorDisplaySize = 50;
+	private int ColorDisplayBorderSize = 3;
+	private readonly Gtk.DrawingArea ColorDisplayPrimary;
+	private readonly Gtk.DrawingArea ColorDisplaySecondary;
+
+	private int ColorCircleRadius = 200 / 2;
 	private int CirclePadding = 10;
 	private readonly Gtk.DrawingArea ColorCircle;
 	private readonly Gtk.DrawingArea ColorCircleValue;
@@ -196,7 +202,10 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 	private Color currentColor;
 
+	public Color primaryColor;
+	public Color secondaryColor;
 
+	private bool editingPrimaryColor = true;
 
 
 
@@ -226,6 +235,28 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		const int spacing = 6;
 
 		currentColor = palette.PrimaryColor;
+		primaryColor = palette.PrimaryColor;
+		secondaryColor = palette.SecondaryColor;
+
+
+		#region Color Display
+
+		var colorDisplayArea = new Gtk.ListBox ();
+
+		ColorDisplayPrimary = new Gtk.DrawingArea ();
+		ColorDisplayPrimary.SetSizeRequest (ColorDisplaySize, ColorDisplaySize);
+		ColorDisplayPrimary.SetDrawFunc ((area, context, width, height) => DrawColorDisplay (context, primaryColor));
+
+		colorDisplayArea.Append (ColorDisplayPrimary);
+
+		ColorDisplaySecondary = new Gtk.DrawingArea ();
+		ColorDisplaySecondary.SetSizeRequest (ColorDisplaySize, ColorDisplaySize);
+		ColorDisplaySecondary.SetDrawFunc ((area, context, width, height) => DrawColorDisplay (context, secondaryColor));
+
+		colorDisplayArea.Append (ColorDisplaySecondary);
+
+		#endregion
+
 
 		#region Color Circle
 
@@ -234,7 +265,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		ColorCircle = new Gtk.DrawingArea ();
 		ColorCircle.WidthRequest = DrawingAreaSize;
 		ColorCircle.HeightRequest = DrawingAreaSize;
-		ColorCircle.SetDrawFunc ((area, context, width, height) => Draw (context));
+		ColorCircle.SetDrawFunc ((area, context, width, height) => DrawColorCircle (context));
 
 		ColorCircleValue = new Gtk.DrawingArea ();
 		ColorCircleValue.WidthRequest = DrawingAreaSize;
@@ -260,6 +291,15 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		var click_gesture = Gtk.GestureClick.New ();
 		click_gesture.SetButton (0); // Listen for all mouse buttons.
 		click_gesture.OnPressed += (_, e) => {
+			double x;
+			double y;
+			ColorCircle.TranslateCoordinates (this, CirclePadding, CirclePadding, out x, out y);
+
+			PointI centre = new PointI (100, 100);
+			PointI cursor = new PointI ((int)(e.X - x), (int)(e.Y - y));
+
+			if (cursor.X < 0 || cursor.X > (ColorCircleRadius + CirclePadding) * 2 || cursor.Y < 0 || cursor.Y > (ColorCircleRadius + CirclePadding) * 2)
+				return;
 			mouseDown = true;
 		};
 		click_gesture.OnReleased += (_, e) => {
@@ -324,6 +364,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		Gtk.Box mainVbox = new () { Spacing = spacing };
 		mainVbox.SetOrientation (Gtk.Orientation.Horizontal);
 
+		mainVbox.Append (colorDisplayArea);
 		mainVbox.Append (colorCircleOverlay);
 		mainVbox.Append (sliders);
 
@@ -391,8 +432,17 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 	}
 
+	private void DrawColorDisplay (Context g, Color c)
+	{
+		int xy = ColorDisplayBorderSize;
+		int wh = ColorDisplaySize - ColorDisplayBorderSize * 2;
+		g.Antialias = Antialias.None;
+		g.FillRectangle (new RectangleD (xy, xy, wh, wh), c);
+		g.DrawRectangle (new RectangleD (xy, xy, wh, wh), new Color(0,0,0), ColorDisplayBorderSize);
+	}
+
 	// INCREDIBLY inefficient!!!
-	private void Draw (Context g)
+	private void DrawColorCircle (Context g)
 	{
 		//g.DrawEllipse (new RectangleD (3, 3, 194, 194), PintaCore.Palette.SecondaryColor, 6);
 
@@ -443,8 +493,6 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 		var sat = Math.Min(vecCursor.Magnitude () / 100.0, 1);
 
-		Console.WriteLine(vecCursor.Magnitude ());
-
 		currentColor.SetHsv (hue: hue, saturation: sat);
 		SetColorFromHsv ();
 	}
@@ -458,9 +506,11 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		GBar.Adjustment.Value = currentColor.G * 255.0;
 		BBar.Adjustment.Value = currentColor.B * 255.0;
 
-		palette.PrimaryColor = currentColor;
+		if (editingPrimaryColor)
+			primaryColor = currentColor;
 
 		ColorCircleCursor.QueueDraw ();
+		ColorDisplayPrimary.QueueDraw ();
 		return true;
 	}
 }
