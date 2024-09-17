@@ -177,6 +177,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 	private readonly WorkspaceManager workspace;
 
 	int ColorCircleRadius = 200 / 2;
+	private int CirclePadding = 10;
 	private readonly Gtk.DrawingArea ColorCircle;
 	private readonly Gtk.DrawingArea ColorCircleValue;
 	private readonly Gtk.DrawingArea ColorCircleCursor;
@@ -226,20 +227,35 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 		currentColor = palette.PrimaryColor;
 
+		#region Color Circle
+
+		var DrawingAreaSize = (ColorCircleRadius + CirclePadding) * 2;
+
 		ColorCircle = new Gtk.DrawingArea ();
-		ColorCircle.WidthRequest = ColorCircleRadius * 2;
-		ColorCircle.HeightRequest = ColorCircleRadius * 2;
+		ColorCircle.WidthRequest = DrawingAreaSize;
+		ColorCircle.HeightRequest = DrawingAreaSize;
 		ColorCircle.SetDrawFunc ((area, context, width, height) => Draw (context));
 
 		ColorCircleValue = new Gtk.DrawingArea ();
-		ColorCircleValue.WidthRequest = ColorCircleRadius * 2;
-		ColorCircleValue.HeightRequest = ColorCircleRadius * 2;
+		ColorCircleValue.WidthRequest = DrawingAreaSize;
+		ColorCircleValue.HeightRequest = DrawingAreaSize;
 		ColorCircleValue.SetDrawFunc ((area, context, width, height) => DrawValue (context));
 
 		ColorCircleCursor = new Gtk.DrawingArea ();
-		ColorCircleCursor.WidthRequest = ColorCircleRadius * 2;
-		ColorCircleCursor.HeightRequest = ColorCircleRadius * 2;
+		ColorCircleCursor.WidthRequest = DrawingAreaSize;
+		ColorCircleCursor.HeightRequest = DrawingAreaSize;
 		ColorCircleCursor.SetDrawFunc ((area, context, width, height) => DrawCursor (context));
+
+		var colorCircleOverlay = new Gtk.Overlay ();
+		colorCircleOverlay.AddOverlay (ColorCircle);
+		colorCircleOverlay.AddOverlay (ColorCircleValue);
+		colorCircleOverlay.AddOverlay (ColorCircleCursor);
+		colorCircleOverlay.HeightRequest = DrawingAreaSize;
+		colorCircleOverlay.WidthRequest = DrawingAreaSize;
+
+		#endregion
+
+		#region Mouse Handler
 
 		var click_gesture = Gtk.GestureClick.New ();
 		click_gesture.SetButton (0); // Listen for all mouse buttons.
@@ -259,6 +275,10 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		};
 		AddController (motion_controller);
 
+		#endregion
+
+
+		#region Sliders
 
 		var sliders = new Gtk.ListBox ();
 
@@ -299,22 +319,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 			return false;
 		};
 
-
-		var colorCircleOverlay = new Gtk.Overlay ();
-		colorCircleOverlay.AddOverlay (ColorCircle);
-		colorCircleOverlay.AddOverlay (ColorCircleValue);
-		colorCircleOverlay.AddOverlay (ColorCircleCursor);
-		colorCircleOverlay.HeightRequest = ColorCircleRadius * 2;
-		colorCircleOverlay.WidthRequest = ColorCircleRadius * 2;
-
-
-		//var h = new Gtk.Box ();
-
-
-		//h.Append (ColorCircle);
-		//h.Append (ColorCircleCursor);
-		//h.Append (e);
-		//h.Append (hueLS);
+		#endregion
 
 		Gtk.Box mainVbox = new () { Spacing = spacing };
 		mainVbox.SetOrientation (Gtk.Orientation.Horizontal);
@@ -324,7 +329,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 		// --- Initialization (Gtk.Window)
 
-		Title = Translations.GetString ("test");
+		Title = Translations.GetString ("Color Picker (UNFINISHED)");
 		TransientFor = chrome.MainWindow;
 		Modal = true;
 		IconName = Resources.Icons.ImageResizeCanvas;
@@ -370,9 +375,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 	private void DrawCursor (Context g)
 	{
 		var loc = HsvToLocation (currentColor.Hsv (), ColorCircleRadius);
-		loc = new PointD (loc.X + ColorCircleRadius, loc.Y + ColorCircleRadius);
-
-		Console.WriteLine($"{loc.X}, {loc.Y}");
+		loc = new PointD (loc.X + ColorCircleRadius + CirclePadding, loc.Y + ColorCircleRadius + CirclePadding);
 
 		g.DrawRectangle (new RectangleD (loc.X - 5, loc.Y - 5, 10, 10), new Color (0, 0, 0), 4);
 		g.DrawRectangle (new RectangleD (loc.X - 5, loc.Y - 5, 10, 10), new Color (1, 1, 1), 1);
@@ -382,7 +385,8 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 	{
 		var blackness = 1.0 - currentColor.Val ();
 
-		g.FillEllipse (new RectangleD (0, 0, ColorCircleRadius * 2, ColorCircleRadius * 2), new Color (0, 0, 0, blackness));
+		g.Antialias = Antialias.None;
+		g.FillEllipse (new RectangleD (CirclePadding, CirclePadding, ColorCircleRadius * 2 + 1, ColorCircleRadius * 2 + 1), new Color (0, 0, 0, blackness));
 
 
 	}
@@ -399,14 +403,14 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 			for (int x = 0; x <= ColorCircleRadius * 2; x++) {
 				PointI pxl = new PointI (x, y);
 				PointI vec = pxl - center;
-				if (vec.Magnitude () <= ColorCircleRadius) {
+				if (vec.Magnitude () <= ColorCircleRadius - 1) {
 					var hue = (MathF.Atan2 (-vec.X, vec.Y) + MathF.PI) / (2f * MathF.PI) * 360f;
 
 					var sat = Math.Min (vec.Magnitude () / ColorCircleRadius, 1);
 
 					var hsv = new HsvColor ((int) hue, (int) (sat * 100), 100);
 					var rgb = hsv.ToRgb ();
-					g.DrawRectangle (new RectangleD (x, y, 1, 1), new Color (rgb.Red / 255.0, rgb.Green / 255.0, rgb.Blue / 255.0), 2);
+					g.DrawRectangle (new RectangleD (x + CirclePadding, y + CirclePadding, 1, 1), new Color (rgb.Red / 255.0, rgb.Green / 255.0, rgb.Blue / 255.0), 2);
 					g.Fill ();
 				}
 			}
@@ -425,10 +429,9 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 	void SetColorFromCircle (PointD point)
 	{
-		//Console.WriteLine($"{point.X}");
 		double x;
 		double y;
-		ColorCircle.TranslateCoordinates (this, 0.0, 0.0, out x, out y);
+		ColorCircle.TranslateCoordinates (this, CirclePadding, CirclePadding, out x, out y);
 
 		PointI centre = new PointI (100, 100);
 		PointI cursor = new PointI ((int)(point.X - x), (int)(point.Y - y));
