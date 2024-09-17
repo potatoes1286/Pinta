@@ -73,7 +73,6 @@ public sealed class StatusBarColorPaletteWidget : Gtk.DrawingArea
 
 	private void HandleClick (PointD point, uint button)
 	{
-		Console.WriteLine("WEE!");
 		switch (GetElementAtPoint (point)) {
 			case WidgetElement.PrimaryColor:
 				/*PintaCore.Palette.PrimaryColor = */GetUserChosenColor (PintaCore.Palette.PrimaryColor, Translations.GetString ("Choose Primary Color"));
