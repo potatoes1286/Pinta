@@ -8,7 +8,167 @@ using Range = Gtk.Range;
 
 namespace Pinta.Core;
 
+public static class ColorExtensions
+{
+	// See RgbColor.ToHsv
+	// h, s, v: 0 <= h <= 360; 0 <= s,v <= 1
+	public static Tuple<double, double, double> Hsv (this Color c)
+	{
+		// In this function, R, G, and B values must be scaled
+		// to be between 0 and 1.
+		// HsvColor.Hue will be a value between 0 and 360, and
+		// HsvColor.Saturation and value are between 0 and 1.
 
+		double min = Math.Min (Math.Min (c.R, c.G), c.B);
+		double max = Math.Max (Math.Max (c.R, c.G), c.B);
+
+		double delta = max - min;
+
+		double h;
+		double s;
+		double v;
+
+		if (max == 0 || delta == 0) {
+			// R, G, and B must be 0, or all the same.
+			// In this case, S is 0, and H is undefined.
+			// Using H = 0 is as good as any...
+			s = 0;
+			h = 0;
+			v = max;
+		} else {
+			s = delta / max;
+			if (c.R == max) {
+				// Between Yellow and Magenta
+				h = (c.G - c.B) / delta;
+			} else if (c.G == max) {
+				// Between Cyan and Yellow
+				h = 2 + (c.B - c.R) / delta;
+			} else {
+				// Between Magenta and Cyan
+				h = 4 + (c.R - c.G) / delta;
+			}
+			v = max;
+		}
+		// Scale h to be between 0 and 360.
+		// This may require adding 360, if the value
+		// is negative.
+		h *= 60;
+
+		if (h < 0) {
+			h += 360;
+		}
+
+		// Scale to the requirements of this
+		// application. All values are between 0 and 255.
+		return new (h,s,v);
+	}
+
+	public static double Hue (this Color c)
+	{
+		return c.Hsv ().Item1;
+	}
+
+	public static double Sat (this Color c)
+	{
+		return c.Hsv ().Item2;
+	}
+
+	public static double Val (this Color c)
+	{
+		return c.Hsv ().Item3;
+	}
+
+	public static void SetRgba (this ref Color c, double? r = null, double? g = null, double? b = null, double? a = null)
+	{
+		c = new Color (r ?? c.R, g ?? c.G, b ?? c.B, a ?? c.A);
+	}
+
+	// See HsvColor.ToRgb
+	public static void SetHsv (this ref Color c, double? hue = null, double? saturation = null, double? value = null)
+	{
+		var hsv = c.Hsv ();
+
+		double h = hue ?? hsv.Item1;
+		double s = saturation ?? hsv.Item2;
+		double v = value ?? hsv.Item3;
+
+		// HsvColor contains values scaled as in the color wheel.
+		// Scale Hue to be between 0 and 360. Saturation
+		// and value scale to be between 0 and 1.
+		h %= 360.0;
+
+		double r = 0;
+		double g = 0;
+		double b = 0;
+
+		if (s == 0) {
+			// If s is 0, all colors are the same.
+			// This is some flavor of gray.
+			r = v;
+			g = v;
+			b = v;
+		} else {
+			// The color wheel consists of 6 sectors.
+			// Figure out which sector you're in.
+			double sectorPos = h / 60;
+			int sectorNumber = (int) (Math.Floor (sectorPos));
+
+			// get the fractional part of the sector.
+			// That is, how many degrees into the sector
+			// are you?
+			double fractionalSector = sectorPos - sectorNumber;
+
+			// Calculate values for the three axes
+			// of the color.
+			double p = v * (1 - s);
+			double q = v * (1 - (s * fractionalSector));
+			double t = v * (1 - (s * (1 - fractionalSector)));
+
+			// Assign the fractional colors to r, g, and b
+			// based on the sector the angle is in.
+			switch (sectorNumber) {
+				case 0:
+					r = v;
+					g = t;
+					b = p;
+					break;
+
+				case 1:
+					r = q;
+					g = v;
+					b = p;
+					break;
+
+				case 2:
+					r = p;
+					g = v;
+					b = t;
+					break;
+
+				case 3:
+					r = p;
+					g = q;
+					b = v;
+					break;
+
+				case 4:
+					r = t;
+					g = p;
+					b = v;
+					break;
+
+				case 5:
+					r = v;
+					g = p;
+					b = q;
+					break;
+			}
+		}
+		// return an RgbColor structure, with values scaled
+		// to be between 0 and 255.
+		c = new Color (r, g, b, c.A);
+	}
+}
 
 public sealed class ColorPickerDialog : Gtk.Dialog
 {
@@ -16,7 +176,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 	private readonly PaletteManager palette;
 	private readonly WorkspaceManager workspace;
 
-	int rad = 200 / 2;
+	int ColorCircleRadius = 200 / 2;
 	private readonly Gtk.DrawingArea ColorCircle;
 	private readonly Gtk.DrawingArea ColorCircleValue;
 	private readonly Gtk.DrawingArea ColorCircleCursor;
@@ -32,8 +192,11 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 	private bool mouseDown = false;
 
-	private HsvColor currentColor;
-	private byte colorAlpha;
+
+	private Color currentColor;
+
+
+
 
 
 	public class LabelScale : Gtk.Box
@@ -61,23 +224,21 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		this.palette = palette;
 		const int spacing = 6;
 
-		var c = palette.PrimaryColor;
-
-		currentColor = new RgbColor ((byte)(c.R * 255.0), (byte)(c.G * 255.0), (byte)(c.B * 255.0)).ToHsv ();
+		currentColor = palette.PrimaryColor;
 
 		ColorCircle = new Gtk.DrawingArea ();
-		ColorCircle.WidthRequest = rad * 2;
-		ColorCircle.HeightRequest = rad * 2;
+		ColorCircle.WidthRequest = ColorCircleRadius * 2;
+		ColorCircle.HeightRequest = ColorCircleRadius * 2;
 		ColorCircle.SetDrawFunc ((area, context, width, height) => Draw (context));
 
 		ColorCircleValue = new Gtk.DrawingArea ();
-		ColorCircleValue.WidthRequest = rad * 2;
-		ColorCircleValue.HeightRequest = rad * 2;
+		ColorCircleValue.WidthRequest = ColorCircleRadius * 2;
+		ColorCircleValue.HeightRequest = ColorCircleRadius * 2;
 		ColorCircleValue.SetDrawFunc ((area, context, width, height) => DrawValue (context));
 
 		ColorCircleCursor = new Gtk.DrawingArea ();
-		ColorCircleCursor.WidthRequest = rad * 2;
-		ColorCircleCursor.HeightRequest = rad * 2;
+		ColorCircleCursor.WidthRequest = ColorCircleRadius * 2;
+		ColorCircleCursor.HeightRequest = ColorCircleRadius * 2;
 		ColorCircleCursor.SetDrawFunc ((area, context, width, height) => DrawCursor (context));
 
 		var click_gesture = Gtk.GestureClick.New ();
@@ -102,37 +263,37 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		var sliders = new Gtk.ListBox ();
 
 
-		sliders.Append (new LabelScale (360, "Hue", currentColor.Hue, ref HueBar));
+		sliders.Append (new LabelScale (360, "Hue", currentColor.Hue(), ref HueBar));
 		HueBar.OnChangeValue += (_, args) => {
 			HandleScaleChange (args, "hue");
 			return false;
 		};
 
-		sliders.Append (new LabelScale (100, "Sat", currentColor.Saturation, ref SatBar));
+		sliders.Append (new LabelScale (100, "Sat", currentColor.Sat() * 100, ref SatBar));
 		SatBar.OnChangeValue += (_, args) => {
 			HandleScaleChange (args, "sat");
 			return false;
 		};
 
-		sliders.Append (new LabelScale (100, "Value", currentColor.Value, ref ValBar));
+		sliders.Append (new LabelScale (100, "Value", currentColor.Val() * 100, ref ValBar));
 		ValBar.OnChangeValue += (_, args) => {
 			HandleScaleChange (args, "val");
 			return false;
 		};
 
-		sliders.Append (new LabelScale (255, "Red", currentColor.Hue, ref RBar));
+		sliders.Append (new LabelScale (255, "Red", currentColor.Hue(), ref RBar));
 		RBar.OnChangeValue += (_, args) => {
 			HandleScaleChange (args, "r");
 			return false;
 		};
 
-		sliders.Append (new LabelScale (255, "Green", currentColor.Saturation, ref BBar));
+		sliders.Append (new LabelScale (255, "Green", currentColor.Sat () * 100, ref BBar));
 		BBar.OnChangeValue += (_, args) => {
 			HandleScaleChange (args, "g");
 			return false;
 		};
 
-		sliders.Append (new LabelScale (255, "Blue", currentColor.Value, ref GBar));
+		sliders.Append (new LabelScale (255, "Blue", currentColor.Val() * 100, ref GBar));
 		GBar.OnChangeValue += (_, args) => {
 			HandleScaleChange (args, "b");
 			return false;
@@ -143,8 +304,8 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		colorCircleOverlay.AddOverlay (ColorCircle);
 		colorCircleOverlay.AddOverlay (ColorCircleValue);
 		colorCircleOverlay.AddOverlay (ColorCircleCursor);
-		colorCircleOverlay.HeightRequest = rad * 2;
-		colorCircleOverlay.WidthRequest = rad * 2;
+		colorCircleOverlay.HeightRequest = ColorCircleRadius * 2;
+		colorCircleOverlay.WidthRequest = ColorCircleRadius * 2;
 
 
 		//var h = new Gtk.Box ();
@@ -184,18 +345,21 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 	private void HandleScaleChange (Range.ChangeValueSignalArgs args, String scale)
 	{
-		if(scale == "r" || scale == "g" || scale == "b")
-			currentColor = new RgbColor ((int)RBar.Adjustment.Value, (int)GBar.Adjustment.Value, (int)BBar.Adjustment.Value).ToHsv ();
+		if (scale == "r" || scale == "g" || scale == "b")
+			//currentColor = new Color (RBar.Adjustment.Value / 255.0, GBar.Adjustment.Value / 255.0, BBar.Adjustment.Value / 255.0);
+			currentColor.SetRgba (RBar.Adjustment.Value / 255.0, GBar.Adjustment.Value / 255.0, BBar.Adjustment.Value / 255.0);
+
+
 
 		switch (scale) {
 			case "hue":
-				currentColor = new HsvColor ((int)args.Value, currentColor.Saturation, currentColor.Value);
+				currentColor.SetHsv (hue: args.Value);
 				break;
 			case "sat":
-				currentColor = new HsvColor (currentColor.Hue, (int)args.Value, currentColor.Value);
+				currentColor.SetHsv (saturation: args.Value / 100.0);
 				break;
 			case "val":
-				currentColor = new HsvColor (currentColor.Hue, currentColor.Saturation, (int)args.Value);
+				currentColor.SetHsv (value: args.Value / 100.0);
 				ColorCircleValue.QueueDraw ();
 				break;
 		}
@@ -205,8 +369,8 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 	private void DrawCursor (Context g)
 	{
-		var loc = HsvToLocation (currentColor, rad);
-		loc = new PointD (loc.X + rad, loc.Y + rad);
+		var loc = HsvToLocation (currentColor.Hsv (), ColorCircleRadius);
+		loc = new PointD (loc.X + ColorCircleRadius, loc.Y + ColorCircleRadius);
 
 		Console.WriteLine($"{loc.X}, {loc.Y}");
 
@@ -216,9 +380,9 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 	private void DrawValue (Context g)
 	{
-		var blackness = 1.0 - currentColor.Value / 100.0;
+		var blackness = 1.0 - currentColor.Val ();
 
-		g.FillEllipse (new RectangleD (0, 0, rad * 2, rad * 2), new Color (0, 0, 0, blackness));
+		g.FillEllipse (new RectangleD (0, 0, ColorCircleRadius * 2, ColorCircleRadius * 2), new Color (0, 0, 0, blackness));
 
 
 	}
@@ -229,16 +393,16 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		//g.DrawEllipse (new RectangleD (3, 3, 194, 194), PintaCore.Palette.SecondaryColor, 6);
 
 
-		PointI center = new PointI (rad, rad);
+		PointI center = new PointI (ColorCircleRadius, ColorCircleRadius);
 
-		for (int y = 0; y <= rad * 2; y++) {
-			for (int x = 0; x <= rad * 2; x++) {
+		for (int y = 0; y <= ColorCircleRadius * 2; y++) {
+			for (int x = 0; x <= ColorCircleRadius * 2; x++) {
 				PointI pxl = new PointI (x, y);
 				PointI vec = pxl - center;
-				if (vec.Magnitude () <= rad) {
+				if (vec.Magnitude () <= ColorCircleRadius) {
 					var hue = (MathF.Atan2 (-vec.X, vec.Y) + MathF.PI) / (2f * MathF.PI) * 360f;
 
-					var sat = Math.Min (vec.Magnitude () / rad, 1);
+					var sat = Math.Min (vec.Magnitude () / ColorCircleRadius, 1);
 
 					var hsv = new HsvColor ((int) hue, (int) (sat * 100), 100);
 					var rgb = hsv.ToRgb ();
@@ -249,11 +413,11 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		}
 	}
 
-	private PointD HsvToLocation (HsvColor color, int radius)
+	private PointD HsvToLocation (Tuple<double, double, double> hsv, int radius)
 	{
-		var rad = color.Hue * (Math.PI / 180.0) - (Math.PI / 2);
-		var mult = radius / 100;
-		var mag = color.Saturation * mult;
+		var rad = hsv.Item1 * (Math.PI / 180.0) - (Math.PI / 2);
+		var mult = radius;
+		var mag = hsv.Item2 * mult;
 		var x = Math.Cos (rad) * mag;
 		var y = Math.Sin (rad) * mag;
 		return new PointD (x, y);
@@ -278,22 +442,20 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 		Console.WriteLine(vecCursor.Magnitude ());
 
-		currentColor = new HsvColor ((int)hue, (int)(sat * 100), currentColor.Value);
+		currentColor.SetHsv (hue: hue, saturation: sat);
 		SetColorFromHsv ();
 	}
 
 	bool SetColorFromHsv ()
 	{
-		HueBar.Adjustment.Value = currentColor.Hue;
-		SatBar.Adjustment.Value = currentColor.Saturation;
+		HueBar.Adjustment.Value = currentColor.Hue ();
+		SatBar.Adjustment.Value = currentColor.Sat () * 100;
 
-		var rgb = currentColor.ToRgb ();
+		RBar.Adjustment.Value = currentColor.R * 255.0;
+		GBar.Adjustment.Value = currentColor.G * 255.0;
+		BBar.Adjustment.Value = currentColor.B * 255.0;
 
-		RBar.Adjustment.Value = rgb.Red;
-		GBar.Adjustment.Value = rgb.Green;
-		BBar.Adjustment.Value = rgb.Blue;
-
-		palette.PrimaryColor = new Color (rgb.Red / 255.0, rgb.Green / 255.0, rgb.Blue / 255.0);
+		palette.PrimaryColor = currentColor;
 
 		ColorCircleCursor.QueueDraw ();
 		return true;
