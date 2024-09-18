@@ -1,5 +1,6 @@
 using System;
 using System.Globalization;
+using Adw;
 using Cairo;
 using GdkPixbuf;
 using GObject;
@@ -190,13 +191,13 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 	private readonly Gtk.DrawingArea ColorCircleCursor;
 
 
-	private readonly Gtk.Scale RBar;
-	private readonly Gtk.Scale GBar;
-	private readonly Gtk.Scale BBar;
+	private readonly LabelScale RWidget;
+	private readonly LabelScale GWidget;
+	private readonly LabelScale BWidget;
 
-	private readonly Gtk.Scale HueBar;
-	private readonly Gtk.Scale SatBar;
-	private readonly Gtk.Scale ValBar;
+	private readonly LabelScale HueWidget;
+	private readonly LabelScale SatWidget;
+	private readonly LabelScale ValWidget;
 
 	private bool mouseDown = false;
 
@@ -212,7 +213,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 	public class LabelScale : Gtk.Box
 	{
-		public Gtk.Label label = new Gtk.Label();
+		public Gtk.Label label = new Gtk.Label ();
 		public Gtk.Scale slider = new Gtk.Scale ();
 		public Gtk.Entry input = new Gtk.Entry ();
 
@@ -222,6 +223,8 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 			public double value;
 		}
 
+
+		private bool entryBeingEdited = false;
 		public LabelScale (int upper, String text, double val)
 		{
 			label.SetLabel (text);
@@ -233,24 +236,33 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 			slider.SetValue (val);
 
 			input.WidthRequest = 50;
-			input.SetText (((int)val).ToString());
+			input.SetText (((int) val).ToString ());
 			this.Append (label);
 			this.Append (slider);
 			this.Append (input);
 
 
 			slider.OnChangeValue += (sender, args) => {
+				if (suppressEvent != 0) {
+					suppressEvent--;
+					return false;
+				}
 				var e = new OnChangeValArgs ();
 				e.senderName = label.GetLabel ();
 				e.value = slider.GetValue ();
+				input.SetText (e.value.ToString(CultureInfo.InvariantCulture));
 				OnValueChange?.Invoke (this, e);
 				return false;
 			};
 
 			input.OnChanged ((o, e) => {
+				if (suppressEvent != 0) {
+					suppressEvent--;
+					return;
+				}
 				var t = o.GetText ();
 				int val;
-				var success =int.TryParse (t, CultureInfo.InvariantCulture, out val);
+				var success = int.TryParse (t, CultureInfo.InvariantCulture, out val);
 				if (success) {
 					var e2 = new OnChangeValArgs ();
 					e2.senderName = label.GetLabel ();
@@ -263,11 +275,21 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 		public event EventHandler<OnChangeValArgs> OnValueChange;
 
+		private int suppressEvent = 0;
 		public void SetValue (double val)
 		{
+
+			suppressEvent = 2;
+			//slider.Adjustment.Value = val;
 			slider.SetValue (val);
-			input.SetText (((int)val).ToString());
+			//input.Text_ = ((int) val).ToString ();
+			//if (!input.GetHasFocus ()) {
+			if(this.GetRoot ().GetFocus () != input)
+				input.SetText (((int) val).ToString ());
+			//}
+
 		}
+
 	}
 
 	public ColorPickerDialog (ChromeManager chrome, WorkspaceManager workspace, PaletteManager palette, bool isPrimaryColor)
@@ -378,41 +400,47 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		var sliders = new Gtk.ListBox ();
 
 
-		sliders.Append (new LabelScale (360, "Hue", currentColor.Hue()));
-		HueBar.OnChangeValue += (_, args) => {
-			HandleScaleChange (args, "hue");
-			return false;
+		HueWidget = new LabelScale (360, "Hue", currentColor.Hue ());
+		HueWidget.OnValueChange += (sender, args) => {
+			currentColor.SetHsv (hue: args.value);
+			SetColorFromHsv ();
 		};
+		sliders.Append (HueWidget);
 
-		sliders.Append (new LabelScale (100, "Sat", currentColor.Sat() * 100, ref SatBar));
-		SatBar.OnChangeValue += (_, args) => {
-			HandleScaleChange (args, "sat");
-			return false;
+		SatWidget = new LabelScale (100, "Sat", currentColor.Hue ());
+		SatWidget.OnValueChange += (sender, args) => {
+			currentColor.SetHsv (saturation: args.value / 100.0);
+			SetColorFromHsv ();
 		};
+		sliders.Append (SatWidget);
 
-		sliders.Append (new LabelScale (100, "Value", currentColor.Val() * 100, ref ValBar));
-		ValBar.OnChangeValue += (_, args) => {
-			HandleScaleChange (args, "val");
-			return false;
-		};
 
-		sliders.Append (new LabelScale (255, "Red", currentColor.Hue(), ref RBar));
-		RBar.OnChangeValue += (_, args) => {
-			HandleScaleChange (args, "r");
-			return false;
+		ValWidget = new LabelScale (100, "Val", currentColor.Hue ());
+		ValWidget.OnValueChange += (sender, args) => {
+			currentColor.SetHsv (value: args.value / 100.0);
+			SetColorFromHsv ();
+			ColorCircleValue.QueueDraw ();
 		};
+		sliders.Append (ValWidget);
 
-		sliders.Append (new LabelScale (255, "Green", currentColor.Sat () * 100, ref BBar));
-		BBar.OnChangeValue += (_, args) => {
-			HandleScaleChange (args, "g");
-			return false;
+		RWidget = new LabelScale (255, "Red", currentColor.R * 255.0);
+		RWidget.OnValueChange += (sender, args) => {
+			currentColor.SetRgba (r: args.value / 255.0);
+			SetColorFromHsv ();
 		};
-
-		sliders.Append (new LabelScale (255, "Blue", currentColor.Val() * 100, ref GBar));
-		GBar.OnChangeValue += (_, args) => {
-			HandleScaleChange (args, "b");
-			return false;
+		sliders.Append (RWidget);
+		GWidget = new LabelScale (255, "Green", currentColor.B * 255.0);
+		GWidget.OnValueChange += (sender, args) => {
+			currentColor.SetRgba (g: args.value / 255.0);
+			SetColorFromHsv ();
 		};
+		sliders.Append (GWidget);
+		BWidget = new LabelScale (255, "Green", currentColor.G * 255.0);
+		BWidget.OnValueChange += (sender, args) => {
+			currentColor.SetRgba (b: args.value / 255.0);
+			SetColorFromHsv ();
+		};
+		sliders.Append (BWidget);
 
 		#endregion
 
@@ -454,30 +482,6 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 			currentColor = secondaryColor;
 		}
 		ColorCircleCursor.QueueDraw ();
-	}
-
-	private void HandleScaleChange (Range.ChangeValueSignalArgs args, String scale)
-	{
-		if (scale == "r" || scale == "g" || scale == "b")
-			//currentColor = new Color (RBar.Adjustment.Value / 255.0, GBar.Adjustment.Value / 255.0, BBar.Adjustment.Value / 255.0);
-			currentColor.SetRgba (RBar.Adjustment.Value / 255.0, GBar.Adjustment.Value / 255.0, BBar.Adjustment.Value / 255.0);
-
-
-
-		switch (scale) {
-			case "hue":
-				currentColor.SetHsv (hue: args.Value);
-				break;
-			case "sat":
-				currentColor.SetHsv (saturation: args.Value / 100.0);
-				break;
-			case "val":
-				currentColor.SetHsv (value: args.Value / 100.0);
-				ColorCircleValue.QueueDraw ();
-				break;
-		}
-
-		SetColorFromHsv ();
 	}
 
 	private void DrawCursor (Context g)
@@ -561,18 +565,16 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		var sat = Math.Min(vecCursor.Magnitude () / 100.0, 1);
 
 		currentColor.SetHsv (hue: hue, saturation: sat);
-		SetColorFromHsv ();
 	}
 
 	bool SetColorFromHsv ()
 	{
+		HueWidget.SetValue (currentColor.Hue ());
+		SatWidget.SetValue (currentColor.Sat () * 100.0);
 
-		HueBar.Adjustment.Value = currentColor.Hue ();
-		SatBar.Adjustment.Value = currentColor.Sat () * 100;
-
-		RBar.Adjustment.Value = currentColor.R * 255.0;
-		GBar.Adjustment.Value = currentColor.G * 255.0;
-		BBar.Adjustment.Value = currentColor.B * 255.0;
+		RWidget.SetValue (currentColor.R * 255.0);
+		GWidget.SetValue (currentColor.G * 255.0);
+		BWidget.SetValue (currentColor.B * 255.0);
 
 		if (editingPrimaryColor) {
 			primaryColor = currentColor;
