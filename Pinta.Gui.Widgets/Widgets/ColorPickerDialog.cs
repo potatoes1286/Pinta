@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using Cairo;
 using GdkPixbuf;
 using GObject;
@@ -213,8 +214,15 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 	{
 		public Gtk.Label label = new Gtk.Label();
 		public Gtk.Scale slider = new Gtk.Scale ();
+		public Gtk.Entry input = new Gtk.Entry ();
 
-		public LabelScale (int upper, String text, double val, ref Gtk.Scale varOut)
+		public class OnChangeValArgs : EventArgs
+		{
+			public string senderName;
+			public double value;
+		}
+
+		public LabelScale (int upper, String text, double val)
 		{
 			label.SetLabel (text);
 			label.WidthRequest = 50;
@@ -222,19 +230,58 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 			slider.SetAdjustment (Adjustment.New (0, 0, upper + 1, 1, 1, 1));
 			//slider.DrawValue = true;
 			slider.WidthRequest = 200;
-			slider.Adjustment.Value = val;
-			varOut = slider;
+			slider.SetValue (val);
+
+			input.WidthRequest = 50;
+			input.SetText (((int)val).ToString());
 			this.Append (label);
 			this.Append (slider);
+			this.Append (input);
+
+
+			slider.OnChangeValue += (sender, args) => {
+				var e = new OnChangeValArgs ();
+				e.senderName = label.GetLabel ();
+				e.value = slider.GetValue ();
+				OnValueChange?.Invoke (this, e);
+				return false;
+			};
+
+			input.OnChanged ((o, e) => {
+				var t = o.GetText ();
+				int val;
+				var success =int.TryParse (t, CultureInfo.InvariantCulture, out val);
+				if (success) {
+					var e2 = new OnChangeValArgs ();
+					e2.senderName = label.GetLabel ();
+					e2.value = val;
+					OnValueChange?.Invoke (this, e2);
+				}
+			});
+
+		}
+
+		public event EventHandler<OnChangeValArgs> OnValueChange;
+
+		public void SetValue (double val)
+		{
+			slider.SetValue (val);
+			input.SetText (((int)val).ToString());
 		}
 	}
 
-	public ColorPickerDialog (ChromeManager chrome, WorkspaceManager workspace, PaletteManager palette)
+	public ColorPickerDialog (ChromeManager chrome, WorkspaceManager workspace, PaletteManager palette, bool isPrimaryColor)
 	{
+
+		editingPrimaryColor = isPrimaryColor;
+
 		this.palette = palette;
 		const int spacing = 6;
 
-		currentColor = palette.PrimaryColor;
+		if(editingPrimaryColor)
+			currentColor = palette.PrimaryColor;
+		else
+			currentColor = palette.SecondaryColor;
 		primaryColor = palette.PrimaryColor;
 		secondaryColor = palette.SecondaryColor;
 
@@ -254,6 +301,14 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		ColorDisplaySecondary.SetDrawFunc ((area, context, width, height) => DrawColorDisplay (context, secondaryColor));
 
 		colorDisplayArea.Append (ColorDisplaySecondary);
+
+		if(editingPrimaryColor)
+			colorDisplayArea.SelectRow (colorDisplayArea.GetRowAtIndex (0));
+		else
+			colorDisplayArea.SelectRow (colorDisplayArea.GetRowAtIndex (1));
+		colorDisplayArea.SetSelectionMode (SelectionMode.Single);
+
+		colorDisplayArea.OnRowSelected += HandleSelectPrimSec;
 
 		#endregion
 
@@ -323,7 +378,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		var sliders = new Gtk.ListBox ();
 
 
-		sliders.Append (new LabelScale (360, "Hue", currentColor.Hue(), ref HueBar));
+		sliders.Append (new LabelScale (360, "Hue", currentColor.Hue()));
 		HueBar.OnChangeValue += (_, args) => {
 			HandleScaleChange (args, "hue");
 			return false;
@@ -387,6 +442,18 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		var contentArea = this.GetContentAreaBox ();
 		contentArea.SetAllMargins (12);
 		contentArea.Append (mainVbox);
+	}
+
+	private void HandleSelectPrimSec (ListBox sender, ListBox.RowSelectedSignalArgs args)
+	{
+		if (args.Row.GetIndex () == 0) {
+			editingPrimaryColor = true;
+			currentColor = primaryColor;
+		} else {
+			editingPrimaryColor = false;
+			currentColor = secondaryColor;
+		}
+		ColorCircleCursor.QueueDraw ();
 	}
 
 	private void HandleScaleChange (Range.ChangeValueSignalArgs args, String scale)
@@ -499,6 +566,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 	bool SetColorFromHsv ()
 	{
+
 		HueBar.Adjustment.Value = currentColor.Hue ();
 		SatBar.Adjustment.Value = currentColor.Sat () * 100;
 
@@ -506,11 +574,15 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		GBar.Adjustment.Value = currentColor.G * 255.0;
 		BBar.Adjustment.Value = currentColor.B * 255.0;
 
-		if (editingPrimaryColor)
+		if (editingPrimaryColor) {
 			primaryColor = currentColor;
+			ColorDisplayPrimary.QueueDraw ();
+		} else {
+			secondaryColor = currentColor;
+			ColorDisplaySecondary.QueueDraw ();
+		}
 
 		ColorCircleCursor.QueueDraw ();
-		ColorDisplayPrimary.QueueDraw ();
 		return true;
 	}
 }

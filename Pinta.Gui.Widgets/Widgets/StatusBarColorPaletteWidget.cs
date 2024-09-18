@@ -75,10 +75,10 @@ public sealed class StatusBarColorPaletteWidget : Gtk.DrawingArea
 	{
 		switch (GetElementAtPoint (point)) {
 			case WidgetElement.PrimaryColor:
-				/*PintaCore.Palette.PrimaryColor = */GetUserChosenColor (PintaCore.Palette.PrimaryColor, Translations.GetString ("Choose Primary Color"));
+				/*PintaCore.Palette.PrimaryColor = */GetUserChosenColor (PintaCore.Palette.PrimaryColor, true);
 				break;
 			case WidgetElement.SecondaryColor:
-				/*PintaCore.Palette.SecondaryColor = */GetUserChosenColor (PintaCore.Palette.SecondaryColor, Translations.GetString ("Choose Secondary Color"));
+				/*PintaCore.Palette.SecondaryColor = */GetUserChosenColor (PintaCore.Palette.SecondaryColor, false);
 				break;
 			case WidgetElement.SwapColors:
 				var temp = PintaCore.Palette.PrimaryColor;
@@ -105,7 +105,7 @@ public sealed class StatusBarColorPaletteWidget : Gtk.DrawingArea
 				else if (button == GtkExtensions.MouseLeftButton)
 					PintaCore.Palette.PrimaryColor = PintaCore.Palette.CurrentPalette[index];
 				else
-					PintaCore.Palette.CurrentPalette[index] = GetUserChosenColor (PintaCore.Palette.CurrentPalette[index], Translations.GetString ("Choose Palette Color"));
+					PintaCore.Palette.CurrentPalette[index] = GetUserChosenColor (PintaCore.Palette.CurrentPalette[index], true);
 
 				break;
 			case WidgetElement.RecentColorsPalette:
@@ -277,9 +277,9 @@ public sealed class StatusBarColorPaletteWidget : Gtk.DrawingArea
 			QueueDraw ();
 	}
 
-	private static Color GetUserChosenColor (Color initialColor, string title)
+	private static Color GetUserChosenColor (Color initialColor, bool isPrimary)
 	{
-		ColorPickerDialog dialog = new ColorPickerDialog (PintaCore.Chrome, PintaCore.Workspace, PintaCore.Palette);
+		ColorPickerDialog dialog = new ColorPickerDialog (PintaCore.Chrome, PintaCore.Workspace, PintaCore.Palette, isPrimary);
 
 		dialog.OnResponse += (_, args) => {
 			dialog.Destroy ();
@@ -300,8 +300,10 @@ public sealed class StatusBarColorPaletteWidget : Gtk.DrawingArea
 
 		var response = dialog.RunBlocking ();
 		if (response == Gtk.ResponseType.Ok) {
-			PintaCore.Palette.PrimaryColor = dialog.primaryColor;
-			PintaCore.Palette.SecondaryColor = dialog.secondaryColor;
+			if(PintaCore.Palette.PrimaryColor != dialog.primaryColor)
+				PintaCore.Palette.PrimaryColor = dialog.primaryColor;
+			if(PintaCore.Palette.SecondaryColor != dialog.secondaryColor)
+				PintaCore.Palette.SecondaryColor = dialog.secondaryColor;
 		}
 
 		dialog.Destroy ();
