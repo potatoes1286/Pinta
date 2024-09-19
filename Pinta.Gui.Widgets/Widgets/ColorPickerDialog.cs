@@ -95,6 +95,11 @@ public static class ColorExtensions
 		double s = saturation ?? hsv.Item2;
 		double v = value ?? hsv.Item3;
 
+		// Stupid hack!
+		// If v is set to 0, it forces sat and hue to 0 as well
+		if (v == 0)
+			v = 0.005;
+
 		// HsvColor contains values scaled as in the color wheel.
 		// Scale Hue to be between 0 and 360. Saturation
 		// and value scale to be between 0 and 1.
@@ -243,7 +248,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 			slider.SetValue (val);
 
 			input.WidthRequest = 50;
-			input.SetText (((int) val).ToString ());
+			input.SetText (Convert.ToInt32(val).ToString());
 			this.Append (label);
 			this.Append (slider);
 			this.Append (input);
@@ -254,6 +259,11 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 					return false;
 				}
 				var e = new OnChangeValArgs ();
+
+				if(label.GetLabel () == "Val")
+					Console.WriteLine($"{e.value}");
+
+
 				e.senderName = label.GetLabel ();
 				e.value = slider.GetValue ();
 				input.SetText (e.value.ToString(CultureInfo.InvariantCulture));
@@ -274,7 +284,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 				if (val > maxVal) {
 					val = maxVal;
-					input.SetText (((int)val).ToString());
+					input.SetText (Convert.ToInt32(val).ToString());
 				}
 
 
@@ -303,8 +313,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 			// Make sure we do not set the text if we are editing it right now
 			if (topWindow.GetFocus ()?.Parent != input) {
 				suppressEvent++;
-				input.Text_ = ((int) val).ToString ();
-				//input.SetText (((int) val).ToString ());
+				input.SetText (Convert.ToInt32(val).ToString());
 			}
 		}
 
@@ -399,7 +408,6 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 			double y;
 			ColorCircle.TranslateCoordinates (this, CirclePadding, CirclePadding, out x, out y);
 
-			PointI centre = new PointI (100, 100);
 			PointI cursor = new PointI ((int)(e.X - x), (int)(e.Y - y));
 
 			if (cursor.X < 0 || cursor.X > (ColorCircleRadius + CirclePadding) * 2 || cursor.Y < 0 || cursor.Y > (ColorCircleRadius + CirclePadding) * 2)
@@ -425,7 +433,8 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 		#region Sliders
 
-		var sliders = new Gtk.ListBox ();
+		var sliders = new Gtk.Box {Spacing = spacing};
+		sliders.SetOrientation (Orientation.Vertical);
 
 
 		HueWidget = new LabelScale (360, "Hue", currentColor.Hue (), this);
@@ -435,7 +444,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		};
 		sliders.Append (HueWidget);
 
-		SatWidget = new LabelScale (100, "Sat", currentColor.Hue (), this);
+		SatWidget = new LabelScale (100, "Sat", currentColor.Sat (), this);
 		SatWidget.OnValueChange += (sender, args) => {
 			currentColor.SetHsv (saturation: args.value / 100.0);
 			SetColorFromHsv ();
@@ -443,7 +452,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		sliders.Append (SatWidget);
 
 
-		ValWidget = new LabelScale (100, "Val", currentColor.Hue (), this);
+		ValWidget = new LabelScale (100, "Value", currentColor.Val (), this);
 		ValWidget.OnValueChange += (sender, args) => {
 			currentColor.SetHsv (value: args.value / 100.0);
 			SetColorFromHsv ();
