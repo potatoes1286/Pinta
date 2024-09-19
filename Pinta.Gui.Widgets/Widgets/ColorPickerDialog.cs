@@ -12,6 +12,7 @@ namespace Pinta.Core;
 
 public static class ColorExtensions
 {
+
 	// See RgbColor.ToHsv
 	// h, s, v: 0 <= h <= 360; 0 <= s,v <= 1
 	public static Tuple<double, double, double> Hsv (this Color c)
@@ -213,9 +214,13 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 	public class LabelScale : Gtk.Box
 	{
+		private readonly Gtk.Window topWindow;
+
 		public Gtk.Label label = new Gtk.Label ();
 		public Gtk.Scale slider = new Gtk.Scale ();
 		public Gtk.Entry input = new Gtk.Entry ();
+
+		public int maxVal;
 
 		public class OnChangeValArgs : EventArgs
 		{
@@ -225,12 +230,14 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 
 		private bool entryBeingEdited = false;
-		public LabelScale (int upper, String text, double val)
+		public LabelScale (int upper, String text, double val, Gtk.Window topWindow)
 		{
+			maxVal = upper;
+			this.topWindow = topWindow;
 			label.SetLabel (text);
 			label.WidthRequest = 50;
 			slider.SetOrientation (Orientation.Horizontal);
-			slider.SetAdjustment (Adjustment.New (0, 0, upper + 1, 1, 1, 1));
+			slider.SetAdjustment (Adjustment.New (0, 0, maxVal + 1, 1, 1, 1));
 			//slider.DrawValue = true;
 			slider.WidthRequest = 200;
 			slider.SetValue (val);
@@ -241,9 +248,8 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 			this.Append (slider);
 			this.Append (input);
 
-
 			slider.OnChangeValue += (sender, args) => {
-				if (suppressEvent != 0) {
+				if (suppressEvent > 0) {
 					suppressEvent--;
 					return false;
 				}
@@ -256,13 +262,22 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 			};
 
 			input.OnChanged ((o, e) => {
-				if (suppressEvent != 0) {
+				if (suppressEvent > 0) {
 					suppressEvent--;
 					return;
 				}
 				var t = o.GetText ();
-				int val;
-				var success = int.TryParse (t, CultureInfo.InvariantCulture, out val);
+				double val;
+				var success = double.TryParse (t, CultureInfo.InvariantCulture, out val);
+
+				Console.WriteLine(input.Text_);
+
+				if (val > maxVal) {
+					val = maxVal;
+					input.SetText (((int)val).ToString());
+				}
+
+
 				if (success) {
 					var e2 = new OnChangeValArgs ();
 					e2.senderName = label.GetLabel ();
@@ -273,28 +288,40 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 		}
 
+		private void test (Widget sender, MoveFocusSignalArgs args)
+		{
+			Console.WriteLine("3");
+		}
+
 		public event EventHandler<OnChangeValArgs> OnValueChange;
 
 		private int suppressEvent = 0;
 		public void SetValue (double val)
 		{
-
-			suppressEvent = 2;
-			//slider.Adjustment.Value = val;
+			suppressEvent = 1;
 			slider.SetValue (val);
-			//input.Text_ = ((int) val).ToString ();
-			//if (!input.GetHasFocus ()) {
-			if(this.GetRoot ().GetFocus () != input)
-				input.SetText (((int) val).ToString ());
-			//}
+			// Make sure we do not set the text if we are editing it right now
+			if (topWindow.GetFocus ()?.Parent != input) {
+				suppressEvent++;
+				input.Text_ = ((int) val).ToString ();
+				//input.SetText (((int) val).ToString ());
+			}
+		}
 
+		private void test (Entry sender, EventArgs args)
+		{
+			Console.WriteLine("1");
+		}
+
+		private void test2 (Widget sender, EventArgs args)
+		{
+			Console.WriteLine("12");
 		}
 
 	}
 
 	public ColorPickerDialog (ChromeManager chrome, WorkspaceManager workspace, PaletteManager palette, bool isPrimaryColor)
 	{
-
 		editingPrimaryColor = isPrimaryColor;
 
 		this.palette = palette;
@@ -388,6 +415,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		motion_controller.OnMotion += (_, args) => {
 
 			if (mouseDown)
+			//Console.WriteLine("FUCK!");
 				SetColorFromCircle(new PointD (args.X, args.Y));
 		};
 		AddController (motion_controller);
@@ -400,14 +428,14 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		var sliders = new Gtk.ListBox ();
 
 
-		HueWidget = new LabelScale (360, "Hue", currentColor.Hue ());
+		HueWidget = new LabelScale (360, "Hue", currentColor.Hue (), this);
 		HueWidget.OnValueChange += (sender, args) => {
 			currentColor.SetHsv (hue: args.value);
 			SetColorFromHsv ();
 		};
 		sliders.Append (HueWidget);
 
-		SatWidget = new LabelScale (100, "Sat", currentColor.Hue ());
+		SatWidget = new LabelScale (100, "Sat", currentColor.Hue (), this);
 		SatWidget.OnValueChange += (sender, args) => {
 			currentColor.SetHsv (saturation: args.value / 100.0);
 			SetColorFromHsv ();
@@ -415,7 +443,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		sliders.Append (SatWidget);
 
 
-		ValWidget = new LabelScale (100, "Val", currentColor.Hue ());
+		ValWidget = new LabelScale (100, "Val", currentColor.Hue (), this);
 		ValWidget.OnValueChange += (sender, args) => {
 			currentColor.SetHsv (value: args.value / 100.0);
 			SetColorFromHsv ();
@@ -423,21 +451,24 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		};
 		sliders.Append (ValWidget);
 
-		RWidget = new LabelScale (255, "Red", currentColor.R * 255.0);
+		RWidget = new LabelScale (255, "Red", currentColor.R * 255.0, this);
 		RWidget.OnValueChange += (sender, args) => {
 			currentColor.SetRgba (r: args.value / 255.0);
+			ColorCircleValue.QueueDraw ();
 			SetColorFromHsv ();
 		};
 		sliders.Append (RWidget);
-		GWidget = new LabelScale (255, "Green", currentColor.B * 255.0);
+		GWidget = new LabelScale (255, "Green", currentColor.G * 255.0, this);
 		GWidget.OnValueChange += (sender, args) => {
 			currentColor.SetRgba (g: args.value / 255.0);
+			ColorCircleValue.QueueDraw ();
 			SetColorFromHsv ();
 		};
 		sliders.Append (GWidget);
-		BWidget = new LabelScale (255, "Green", currentColor.G * 255.0);
+		BWidget = new LabelScale (255, "Blue", currentColor.B * 255.0, this);
 		BWidget.OnValueChange += (sender, args) => {
 			currentColor.SetRgba (b: args.value / 255.0);
+			ColorCircleValue.QueueDraw ();
 			SetColorFromHsv ();
 		};
 		sliders.Append (BWidget);
@@ -565,12 +596,14 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		var sat = Math.Min(vecCursor.Magnitude () / 100.0, 1);
 
 		currentColor.SetHsv (hue: hue, saturation: sat);
+		SetColorFromHsv ();
 	}
 
 	bool SetColorFromHsv ()
 	{
 		HueWidget.SetValue (currentColor.Hue ());
 		SatWidget.SetValue (currentColor.Sat () * 100.0);
+		ValWidget.SetValue (currentColor.Val () * 100.0);
 
 		RWidget.SetValue (currentColor.R * 255.0);
 		GWidget.SetValue (currentColor.G * 255.0);
