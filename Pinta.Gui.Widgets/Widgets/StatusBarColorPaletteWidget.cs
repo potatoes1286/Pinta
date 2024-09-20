@@ -41,10 +41,10 @@ public sealed class StatusBarColorPaletteWidget : Gtk.DrawingArea
 	private RectangleD palette_rect;
 	private RectangleD recent_palette_rect;
 
-	const int PALETTE_ROWS = 2;
-	const int SWATCH_SIZE = 19;
-	const int WIDGET_HEIGHT = 42;
-	const int PALETTE_MARGIN = 10;
+	public const int PALETTE_ROWS = 2;
+	public const int SWATCH_SIZE = 19;
+	public const int WIDGET_HEIGHT = 42;
+	public const int PALETTE_MARGIN = 10;
 
 	public StatusBarColorPaletteWidget ()
 	{
@@ -95,7 +95,7 @@ public sealed class StatusBarColorPaletteWidget : Gtk.DrawingArea
 				break;
 			case WidgetElement.Palette:
 
-				var index = GetSwatchAtLocation (point);
+				var index = GetSwatchAtLocation (point, palette_rect);
 
 				if (index < 0)
 					break;
@@ -110,7 +110,7 @@ public sealed class StatusBarColorPaletteWidget : Gtk.DrawingArea
 				break;
 			case WidgetElement.RecentColorsPalette:
 
-				var recent_index = GetSwatchAtLocation (point, true);
+				var recent_index = GetSwatchAtLocation (point, recent_palette_rect, true);
 
 				if (recent_index < 0)
 					break;
@@ -149,13 +149,13 @@ public sealed class StatusBarColorPaletteWidget : Gtk.DrawingArea
 		var recent = PintaCore.Palette.RecentlyUsedColors;
 
 		for (var i = 0; i < recent.Count (); i++)
-			g.FillRectangle (GetSwatchBounds (i, true), recent.ElementAt (i));
+			g.FillRectangle (GetSwatchBounds (i, recent_palette_rect, true), recent.ElementAt (i));
 
 		// Draw color swatches
 		var palette = PintaCore.Palette.CurrentPalette;
 
 		for (var i = 0; i < palette.Count; i++)
-			g.FillRectangle (GetSwatchBounds (i), palette[i]);
+			g.FillRectangle (GetSwatchBounds (i, palette_rect), palette[i]);
 	}
 
 	private void DrawSwapIcon (Context g, Color color)
@@ -198,7 +198,7 @@ public sealed class StatusBarColorPaletteWidget : Gtk.DrawingArea
 		palette_rect = new RectangleD (recent_palette_rect.Right + PALETTE_MARGIN, 2, width - recent_palette_rect.Right - PALETTE_MARGIN, SWATCH_SIZE * PALETTE_ROWS);
 	}
 
-	private RectangleD GetSwatchBounds (int index, bool recentColorPalette = false)
+	public static RectangleD GetSwatchBounds (int index, RectangleD palette_bounds, bool recentColorPalette = false)
 	{
 		// Normal swatches are laid out like this:
 		// 0 | 2 | 4 | 6
@@ -213,20 +213,19 @@ public sealed class StatusBarColorPaletteWidget : Gtk.DrawingArea
 		var col = recentColorPalette ? index % recent_cols : index / PALETTE_ROWS;
 
 		// Now we need to construct the bounds of that row/column
-		var palette_bounds = recentColorPalette ? recent_palette_rect : palette_rect;
 		var x = palette_bounds.X + (col * SWATCH_SIZE);
 		var y = palette_bounds.Y + (row * SWATCH_SIZE);
 
 		return new RectangleD (x, y, SWATCH_SIZE, SWATCH_SIZE);
 	}
 
-	private int GetSwatchAtLocation (PointD point, bool recentColorPalette = false)
+	public static int GetSwatchAtLocation (PointD point, RectangleD palette_bounds, bool recentColorPalette = false)
 	{
 		var max = recentColorPalette ? PintaCore.Palette.RecentlyUsedColors.Count () : PintaCore.Palette.CurrentPalette.Count;
 
 		// This could be more efficient, but is good enough for now
 		for (var i = 0; i < max; i++)
-			if (GetSwatchBounds (i, recentColorPalette).ContainsPoint (point))
+			if (GetSwatchBounds (i, palette_bounds, recentColorPalette).ContainsPoint (point))
 				return i;
 
 		return -1;
@@ -242,11 +241,11 @@ public sealed class StatusBarColorPaletteWidget : Gtk.DrawingArea
 
 		switch (GetElementAtPoint (point)) {
 			case WidgetElement.Palette:
-				if (GetSwatchAtLocation (point) >= 0)
+				if (GetSwatchAtLocation (point, palette_rect) >= 0)
 					text = Translations.GetString ("Left click to set primary color. Right click to set secondary color. Middle click to choose palette color.");
 				break;
 			case WidgetElement.RecentColorsPalette:
-				if (GetSwatchAtLocation (point, true) >= 0)
+				if (GetSwatchAtLocation (point, recent_palette_rect,true) >= 0)
 					text = Translations.GetString ("Left click to set primary color. Right click to set secondary color.");
 				break;
 			case WidgetElement.PrimaryColor:

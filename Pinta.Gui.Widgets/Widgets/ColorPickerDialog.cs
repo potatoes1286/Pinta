@@ -1,5 +1,6 @@
 using System;
 using System.Globalization;
+using System.Linq;
 using Adw;
 using Cairo;
 using GdkPixbuf;
@@ -7,6 +8,7 @@ using GObject;
 using Gtk;
 using Pango;
 using Pinta.Core;
+using Pinta.Gui.Widgets;
 using Color = Cairo.Color;
 using Context = Cairo.Context;
 using Pattern = Cairo.Internal.Pattern;
@@ -257,8 +259,6 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 	private bool editingPrimaryColor = true;
 
-
-
 	public class LabelScale : Gtk.Box
 	{
 		private readonly Gtk.Window topWindow;
@@ -390,7 +390,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 			colorDisplayArea.SelectRow (colorDisplayArea.GetRowAtIndex (1));
 		colorDisplayArea.SetSelectionMode (SelectionMode.Single);
 
-		colorDisplayArea.OnRowSelected += HandleSelectPrimSec;
+		colorDisplayArea.OnRowSelected += HandlePaletteSelect;
 
 		#endregion
 
@@ -445,36 +445,6 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 		#endregion
 
-		#region Mouse Handler
-
-		var click_gesture = Gtk.GestureClick.New ();
-		click_gesture.SetButton (0); // Listen for all mouse buttons.
-		click_gesture.OnPressed += (_, e) => {
-			double x;
-			double y;
-			ColorCircle.TranslateCoordinates (this, CirclePadding, CirclePadding, out x, out y);
-
-			PointI cursor = new PointI ((int)(e.X - x), (int)(e.Y - y));
-
-			if (cursor.X < 0 || cursor.X > (ColorCircleRadius + CirclePadding) * 2 || cursor.Y < 0 || cursor.Y > (ColorCircleRadius + CirclePadding) * 2)
-				return;
-			mouseDown = true;
-		};
-		click_gesture.OnReleased += (_, e) => {
-			mouseDown = false;
-		};
-		AddController (click_gesture);
-
-		var motion_controller = Gtk.EventControllerMotion.New ();
-		motion_controller.OnMotion += (_, args) => {
-
-			if (mouseDown)
-				SetColorFromCircle(new PointD (args.X, args.Y));
-		};
-		AddController (motion_controller);
-
-		#endregion
-
 		#region SliderAndHex
 
 		var sliders = new Gtk.Box {Spacing = spacing};
@@ -486,10 +456,8 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		HexEntry = new Entry { Text_ = currentColor.ToHex ()};
 		HexEntry.OnChanged ((o, e) => {
 			if (GetFocus ()?.Parent == HexEntry) {
-				Console.WriteLine("HEA");
 				currentColor.FromHex (HexEntry.GetText ());
-				ColorCircleValue.QueueDraw ();
-				SetColorFromHsv ();
+				UpdateColorView ();
 			}
 		});
 
@@ -555,18 +523,115 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 		#endregion
 
+
+		var bottomBox = new Gtk.Box { Spacing = spacing };
+		bottomBox.SetOrientation (Orientation.Vertical);
+		var recentPaletteColorDrawingArea = new DrawingArea ();
+		recentPaletteColorDrawingArea.WidthRequest =  400;
+		recentPaletteColorDrawingArea.HeightRequest = StatusBarColorPaletteWidget.SWATCH_SIZE * StatusBarColorPaletteWidget.PALETTE_ROWS;
+
+		recentPaletteColorDrawingArea.SetDrawFunc ((area, g, width, height) => {
+			var recent = PintaCore.Palette.RecentlyUsedColors;
+			var recent_cols = PintaCore.Palette.MaxRecentlyUsedColor / StatusBarColorPaletteWidget.PALETTE_ROWS;
+			var recent_palette_rect = new RectangleD (0, 0, StatusBarColorPaletteWidget.SWATCH_SIZE * recent_cols,
+				StatusBarColorPaletteWidget.SWATCH_SIZE * StatusBarColorPaletteWidget.PALETTE_ROWS);
+
+			for (var i = 0; i < recent.Count (); i++)
+				g.FillRectangle (StatusBarColorPaletteWidget.GetSwatchBounds (i, recent_palette_rect, true), recent.ElementAt (i));
+		});
+
+		bottomBox.Append (recentPaletteColorDrawingArea);
+
+
+		var paletteColorDrawingArea = new DrawingArea ();
+
+		paletteColorDrawingArea.WidthRequest =  500;
+		paletteColorDrawingArea.HeightRequest = StatusBarColorPaletteWidget.SWATCH_SIZE * StatusBarColorPaletteWidget.PALETTE_ROWS;
+
+		paletteColorDrawingArea.SetDrawFunc ((area, g, width, height) => {
+			var palette_rect = new RectangleD (0, 0,
+				width - StatusBarColorPaletteWidget.PALETTE_MARGIN,
+				StatusBarColorPaletteWidget.SWATCH_SIZE * StatusBarColorPaletteWidget.PALETTE_ROWS);
+
+			var palette = PintaCore.Palette.CurrentPalette;
+			for (var i = 0; i < palette.Count; i++)
+				g.FillRectangle (StatusBarColorPaletteWidget.GetSwatchBounds (i, palette_rect), palette[i]);
+		});
+		bottomBox.Append (paletteColorDrawingArea);
+
+
+
+
+		#region Mouse Handler
+
+		var click_gesture = Gtk.GestureClick.New ();
+		click_gesture.SetButton (0); // Listen for all mouse buttons.
+		click_gesture.OnPressed += (_, e) => {
+
+			#region Handle Color Circle
+			double x;
+			double y;
+			ColorCircle.TranslateCoordinates (this, CirclePadding, CirclePadding, out x, out y);
+			PointI cursor = new PointI ((int)(e.X - x), (int)(e.Y - y));
+			if (cursor.X >= 0 && cursor.X <= (ColorCircleRadius + CirclePadding) * 2 && cursor.Y >= 0 && cursor.Y <= (ColorCircleRadius + CirclePadding) * 2)
+				mouseDown = true;
+			#endregion
+
+			#region Handle Palette
+			recentPaletteColorDrawingArea.TranslateCoordinates (this, 0, 0, out x, out y);
+			var cursorD = new PointD ((e.X - x), (e.Y - y));
+			if (cursorD.X >= 0 && cursorD.X <= recentPaletteColorDrawingArea.WidthRequest && cursorD.Y >= 0 && cursorD.Y <= recentPaletteColorDrawingArea.HeightRequest) {
+				var recent_index = StatusBarColorPaletteWidget.GetSwatchAtLocation (cursorD, new RectangleD(), true);
+
+				if (recent_index >= 0) {
+					currentColor = PintaCore.Palette.RecentlyUsedColors.ElementAt (recent_index);
+					UpdateColorView ();
+
+				}
+			}
+
+			paletteColorDrawingArea.TranslateCoordinates (this, 0, 0, out x, out y);
+			cursorD = new PointD ((e.X - x), (e.Y - y));
+			if (cursorD.X >= 0 && cursorD.X <= paletteColorDrawingArea.WidthRequest && cursorD.Y >= 0 && cursorD.Y <= paletteColorDrawingArea.HeightRequest) {
+				var index = StatusBarColorPaletteWidget.GetSwatchAtLocation (cursorD, new RectangleD());
+
+				if (index >= 0) {
+					currentColor = PintaCore.Palette.CurrentPalette[index];
+					UpdateColorView ();
+
+				}
+			}
+
+
+
+			#endregion
+		};
+		click_gesture.OnReleased += (_, e) => {
+			mouseDown = false;
+		};
+		AddController (click_gesture);
+
+		var motion_controller = Gtk.EventControllerMotion.New ();
+		motion_controller.OnMotion += (_, args) => {
+
+			if (mouseDown)
+				SetColorFromCircle(new PointD (args.X, args.Y));
+		};
+		AddController (motion_controller);
+
+		#endregion
+
+
 		Gtk.Box mainVbox = new () { Spacing = spacing };
-		mainVbox.SetOrientation (Gtk.Orientation.Horizontal);
+		mainVbox.SetOrientation (Gtk.Orientation.Vertical);
 
 		topBox.Append (colorDisplayArea);
 		topBox.Append (colorCircleBox);
 		topBox.Append (sliders);
 
 
-
-
-
 		mainVbox.Append (topBox);
+		mainVbox.Append (bottomBox);
 
 		// --- Initialization (Gtk.Window)
 
@@ -589,7 +654,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		contentArea.Append (mainVbox);
 	}
 
-	private void HandleSelectPrimSec (ListBox sender, ListBox.RowSelectedSignalArgs args)
+	private void HandlePaletteSelect (ListBox sender, ListBox.RowSelectedSignalArgs args)
 	{
 		if (args.Row.GetIndex () == 0) {
 			editingPrimaryColor = true;
@@ -599,6 +664,8 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 			currentColor = secondaryColor;
 		}
 		ColorCircleCursor.QueueDraw ();
+		SetColorFromHsv ();
+		ColorCircleValue.QueueDraw ();
 	}
 
 	private void DrawCursor (Context g)
@@ -664,6 +731,12 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 				}
 			}
 		}
+	}
+
+	private void UpdateColorView ()
+	{
+		ColorCircleValue.QueueDraw ();
+		SetColorFromHsv ();
 	}
 
 	private PointD HsvToLocation (Tuple<double, double, double> hsv, int radius)
