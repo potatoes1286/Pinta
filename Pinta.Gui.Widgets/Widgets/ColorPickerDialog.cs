@@ -5,13 +5,50 @@ using Cairo;
 using GdkPixbuf;
 using GObject;
 using Gtk;
+using Pango;
 using Pinta.Core;
+using Color = Cairo.Color;
+using Context = Cairo.Context;
+using Pattern = Cairo.Internal.Pattern;
 using Range = Gtk.Range;
 
 namespace Pinta.Core;
 
 public static class ColorExtensions
 {
+
+	public static String ToHex (this Color c)
+	{
+		int r = Convert.ToInt32(c.R * 255.0);
+		int g = Convert.ToInt32(c.G * 255.0);
+		int b = Convert.ToInt32(c.B * 255.0);
+		int a = Convert.ToInt32(c.A * 255.0);
+
+		return $"{r:X2}{g:X2}{b:X2}{a:X2}";
+	}
+
+	public static bool FromHex (this ref Color c, String hex)
+	{
+		if (hex.Length != 6 && hex.Length != 8)
+			return false;
+		try {
+
+			int r = int.Parse (hex.Substring (0, 2), NumberStyles.HexNumber);
+			int g = int.Parse (hex.Substring (2, 2), NumberStyles.HexNumber);
+			int b = int.Parse (hex.Substring (4, 2), NumberStyles.HexNumber);
+			int a = 255;
+			if (hex.Length > 6)
+				a = int.Parse (hex.Substring (5, 2), NumberStyles.HexNumber);
+
+			Console.WriteLine($"{r}, {g}, {b}, {a}");
+
+			c.SetRgba (r / 255.0, g / 255.0, b / 255.0, a / 255.0);
+		} catch {
+			Console.WriteLine("Fuck!");
+			return false;
+		}
+		return true;
+	}
 
 	// See RgbColor.ToHsv
 	// h, s, v: 0 <= h <= 360; 0 <= s,v <= 1
@@ -200,12 +237,17 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 	private readonly LabelScale RWidget;
 	private readonly LabelScale GWidget;
 	private readonly LabelScale BWidget;
+	private readonly LabelScale AWidget;
 
 	private readonly LabelScale HueWidget;
 	private readonly LabelScale SatWidget;
 	private readonly LabelScale ValWidget;
 
+	private readonly Entry HexEntry;
+
 	private bool mouseDown = false;
+
+	private bool showValue = true;
 
 
 	private Color currentColor;
@@ -260,9 +302,6 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 				}
 				var e = new OnChangeValArgs ();
 
-				if(label.GetLabel () == "Val")
-					Console.WriteLine($"{e.value}");
-
 
 				e.senderName = label.GetLabel ();
 				e.value = slider.GetValue ();
@@ -280,8 +319,6 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 				double val;
 				var success = double.TryParse (t, CultureInfo.InvariantCulture, out val);
 
-				Console.WriteLine(input.Text_);
-
 				if (val > maxVal) {
 					val = maxVal;
 					input.SetText (Convert.ToInt32(val).ToString());
@@ -298,11 +335,6 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 		}
 
-		private void test (Widget sender, MoveFocusSignalArgs args)
-		{
-			Console.WriteLine("3");
-		}
-
 		public event EventHandler<OnChangeValArgs> OnValueChange;
 
 		private int suppressEvent = 0;
@@ -315,16 +347,6 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 				suppressEvent++;
 				input.SetText (Convert.ToInt32(val).ToString());
 			}
-		}
-
-		private void test (Entry sender, EventArgs args)
-		{
-			Console.WriteLine("1");
-		}
-
-		private void test2 (Widget sender, EventArgs args)
-		{
-			Console.WriteLine("12");
 		}
 
 	}
@@ -343,6 +365,8 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		primaryColor = palette.PrimaryColor;
 		secondaryColor = palette.SecondaryColor;
 
+
+		var topBox = new Gtk.Box {Spacing = spacing};
 
 		#region Color Display
 
@@ -370,8 +394,10 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 		#endregion
 
-
 		#region Color Circle
+
+		var colorCircleBox = new Gtk.Box { Spacing = spacing };
+		colorCircleBox.SetOrientation (Orientation.Vertical);
 
 		var DrawingAreaSize = (ColorCircleRadius + CirclePadding) * 2;
 
@@ -396,6 +422,26 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		colorCircleOverlay.AddOverlay (ColorCircleCursor);
 		colorCircleOverlay.HeightRequest = DrawingAreaSize;
 		colorCircleOverlay.WidthRequest = DrawingAreaSize;
+
+		colorCircleBox.Append (colorCircleOverlay);
+
+		var colorCircleValueToggleBox = new Gtk.Box ();
+
+		// TODO: Remember setting!
+		var colorCircleValueToggle = new Gtk.CheckButton ();
+		colorCircleValueToggle.Active = showValue;
+		colorCircleValueToggle.OnToggled += (o, e) => {
+			showValue = !showValue;
+			colorCircleValueToggle.Active = showValue;
+			ColorCircleValue.QueueDraw ();
+		};
+
+		colorCircleValueToggleBox.Append (colorCircleValueToggle);
+
+		var colorCircleValueToggleLabel = new Gtk.Label { Label_ = "Show Value" };
+		colorCircleValueToggleBox.Append (colorCircleValueToggleLabel);
+
+		colorCircleBox.Append (colorCircleValueToggleBox);
 
 		#endregion
 
@@ -423,18 +469,34 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		motion_controller.OnMotion += (_, args) => {
 
 			if (mouseDown)
-			//Console.WriteLine("FUCK!");
 				SetColorFromCircle(new PointD (args.X, args.Y));
 		};
 		AddController (motion_controller);
 
 		#endregion
 
-
-		#region Sliders
+		#region SliderAndHex
 
 		var sliders = new Gtk.Box {Spacing = spacing};
 		sliders.SetOrientation (Orientation.Vertical);
+
+		var hexBox = new Gtk.Box { Spacing = spacing };
+
+		hexBox.Append (new Label { Label_ = "Hex", WidthRequest = 50});
+		HexEntry = new Entry { Text_ = currentColor.ToHex ()};
+		HexEntry.OnChanged ((o, e) => {
+			if (GetFocus ()?.Parent == HexEntry) {
+				Console.WriteLine("HEA");
+				currentColor.FromHex (HexEntry.GetText ());
+				ColorCircleValue.QueueDraw ();
+				SetColorFromHsv ();
+			}
+		});
+
+		hexBox.Append (HexEntry);
+
+
+		sliders.Append (hexBox);
 
 
 		HueWidget = new LabelScale (360, "Hue", currentColor.Hue (), this);
@@ -444,7 +506,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		};
 		sliders.Append (HueWidget);
 
-		SatWidget = new LabelScale (100, "Sat", currentColor.Sat (), this);
+		SatWidget = new LabelScale (100, "Sat", currentColor.Sat () * 100.0, this);
 		SatWidget.OnValueChange += (sender, args) => {
 			currentColor.SetHsv (saturation: args.value / 100.0);
 			SetColorFromHsv ();
@@ -452,13 +514,15 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		sliders.Append (SatWidget);
 
 
-		ValWidget = new LabelScale (100, "Value", currentColor.Val (), this);
+		ValWidget = new LabelScale (100, "Value", currentColor.Val () * 100.0, this);
 		ValWidget.OnValueChange += (sender, args) => {
 			currentColor.SetHsv (value: args.value / 100.0);
 			SetColorFromHsv ();
 			ColorCircleValue.QueueDraw ();
 		};
 		sliders.Append (ValWidget);
+
+		sliders.Append (new Gtk.Separator());
 
 		RWidget = new LabelScale (255, "Red", currentColor.R * 255.0, this);
 		RWidget.OnValueChange += (sender, args) => {
@@ -481,15 +545,28 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 			SetColorFromHsv ();
 		};
 		sliders.Append (BWidget);
+		AWidget = new LabelScale (255, "Alpha", currentColor.A * 255.0, this);
+		AWidget.OnValueChange += (sender, args) => {
+			currentColor.SetRgba (a: args.value / 255.0);
+			ColorCircleValue.QueueDraw ();
+			SetColorFromHsv ();
+		};
+		sliders.Append (AWidget);
 
 		#endregion
 
 		Gtk.Box mainVbox = new () { Spacing = spacing };
 		mainVbox.SetOrientation (Gtk.Orientation.Horizontal);
 
-		mainVbox.Append (colorDisplayArea);
-		mainVbox.Append (colorCircleOverlay);
-		mainVbox.Append (sliders);
+		topBox.Append (colorDisplayArea);
+		topBox.Append (colorCircleBox);
+		topBox.Append (sliders);
+
+
+
+
+
+		mainVbox.Append (topBox);
 
 		// --- Initialization (Gtk.Window)
 
@@ -537,6 +614,9 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 	{
 		var blackness = 1.0 - currentColor.Val ();
 
+		if (!showValue)
+			blackness = 0;
+
 		g.Antialias = Antialias.None;
 		g.FillEllipse (new RectangleD (CirclePadding, CirclePadding, ColorCircleRadius * 2 + 1, ColorCircleRadius * 2 + 1), new Color (0, 0, 0, blackness));
 
@@ -548,6 +628,14 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		int xy = ColorDisplayBorderSize;
 		int wh = ColorDisplaySize - ColorDisplayBorderSize * 2;
 		g.Antialias = Antialias.None;
+
+		// make checker pattern
+		if (c.A != 1) {
+			g.FillRectangle (new RectangleD (xy, xy, wh, wh), new Color(1,1,1));
+			g.FillRectangle (new RectangleD (xy, xy, wh / 2, wh / 2), new Color(.8,.8,.8));
+			g.FillRectangle (new RectangleD (xy + wh / 2, xy + wh / 2, wh / 2, wh / 2), new Color(.8,.8,.8));
+		}
+
 		g.FillRectangle (new RectangleD (xy, xy, wh, wh), c);
 		g.DrawRectangle (new RectangleD (xy, xy, wh, wh), new Color(0,0,0), ColorDisplayBorderSize);
 	}
@@ -617,6 +705,10 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		RWidget.SetValue (currentColor.R * 255.0);
 		GWidget.SetValue (currentColor.G * 255.0);
 		BWidget.SetValue (currentColor.B * 255.0);
+		AWidget.SetValue (currentColor.A * 255.0);
+
+		if(GetFocus ()?.Parent != HexEntry)
+			HexEntry.SetText (currentColor.ToHex ());
 
 		if (editingPrimaryColor) {
 			primaryColor = currentColor;
