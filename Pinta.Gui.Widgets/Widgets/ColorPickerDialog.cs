@@ -435,7 +435,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		colorCircleValueToggle.OnToggled += (o, e) => {
 			color_circle_show_value = !color_circle_show_value;
 			colorCircleValueToggle.Active = color_circle_show_value;
-			RedrawValue ();
+			RedrawValue (true);
 		};
 
 		colorCircleValueToggleBox.Append (colorCircleValueToggle);
@@ -680,14 +680,16 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		g.DrawRectangle (new RectangleD (loc.X - 5, loc.Y - 5, 10, 10), new Color (1, 1, 1), 1);
 	}
 
-	private void RedrawValue ()
+	private void RedrawValue (bool force = false)
 	{
 		var val = current_color.Val ();
+		if (!color_circle_show_value)
+			val = 1;
 		// If nothing has changed, do not re-render
-		if (last_rendered_value == val)
-			return;
-		last_rendered_value = val;
-		color_circle_value.QueueDraw ();
+		if (last_rendered_value != val || force) {
+			last_rendered_value = val;
+			color_circle_value.QueueDraw ();
+		}
 	}
 
 	private void DrawValue (Context g)
