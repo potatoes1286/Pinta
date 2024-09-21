@@ -46,7 +46,6 @@ public static class ColorExtensions
 
 			c.SetRgba (r / 255.0, g / 255.0, b / 255.0, a / 255.0);
 		} catch {
-			Console.WriteLine("Fuck!");
 			return false;
 		}
 		return true;
@@ -257,7 +256,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 	public Color primary_color;
 	public Color secondary_color;
 
-	private int last_rendered_value = -1;
+	private double last_rendered_value = -1;
 
 	//scale-entry input
 	public class ScaleEntryInput : Gtk.Box
@@ -436,7 +435,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		colorCircleValueToggle.OnToggled += (o, e) => {
 			color_circle_show_value = !color_circle_show_value;
 			colorCircleValueToggle.Active = color_circle_show_value;
-			color_circle_value.QueueDraw ();
+			RedrawValue ();
 		};
 
 		colorCircleValueToggleBox.Append (colorCircleValueToggle);
@@ -512,6 +511,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 			UpdateColorView ();
 		};
 		sliders.Append (b_sei);
+		sliders.Append (new Gtk.Separator());
 		a_sei = new ScaleEntryInput (255, "Alpha", current_color.A * 255.0, this);
 		a_sei.OnValueChange += (sender, args) => {
 			current_color.SetRgba (a: args.value / 255.0);
@@ -667,7 +667,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		}
 		color_circle_cursor.QueueDraw ();
 		SetColorFromHsv ();
-		color_circle_value.QueueDraw ();
+		RedrawValue ();
 	}
 
 	private void DrawCursor (Context g)
@@ -675,20 +675,24 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		var loc = HsvToLocation (current_color.Hsv (), color_circle_radius);
 		loc = new PointD (loc.X + color_circle_radius + color_circle_padding, loc.Y + color_circle_radius + color_circle_padding);
 
+		g.FillRectangle (new RectangleD (loc.X - 5, loc.Y - 5, 10, 10), current_color);
 		g.DrawRectangle (new RectangleD (loc.X - 5, loc.Y - 5, 10, 10), new Color (0, 0, 0), 4);
 		g.DrawRectangle (new RectangleD (loc.X - 5, loc.Y - 5, 10, 10), new Color (1, 1, 1), 1);
 	}
 
-	private void DrawValue (Context g)
+	private void RedrawValue ()
 	{
 		var val = current_color.Val ();
-
 		// If nothing has changed, do not re-render
-		if (last_rendered_value == (int)val)
+		if (last_rendered_value == val)
 			return;
-		last_rendered_value = (int) val;
+		last_rendered_value = val;
+		color_circle_value.QueueDraw ();
+	}
 
-		var blackness = 1.0 - val;
+	private void DrawValue (Context g)
+	{
+		var blackness = 1.0 - current_color.Val ();
 
 		if (!color_circle_show_value)
 			blackness = 0;
@@ -729,7 +733,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 				PointI pxl = new PointI (x, y);
 				PointI vec = pxl - center;
 				if (vec.Magnitude () <= color_circle_radius - 1) {
-					var hue = (MathF.Atan2 (-vec.X, vec.Y) + MathF.PI) / (2f * MathF.PI) * 360f;
+					var hue = (MathF.Atan2 (vec.Y, -vec.X) + MathF.PI) / (2f * MathF.PI) * 360f;
 
 					var sat = Math.Min (vec.Magnitude () / color_circle_radius, 1);
 
@@ -744,33 +748,31 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 	private void UpdateColorView ()
 	{
-		color_circle_value.QueueDraw ();
+		RedrawValue ();
 		SetColorFromHsv ();
 	}
 
 	private PointD HsvToLocation (Tuple<double, double, double> hsv, int radius)
 	{
-		var rad = hsv.Item1 * (Math.PI / 180.0) - (Math.PI / 2);
+		var rad = hsv.Item1 * (Math.PI / 180.0);
 		var mult = radius;
 		var mag = hsv.Item2 * mult;
 		var x = Math.Cos (rad) * mag;
 		var y = Math.Sin (rad) * mag;
-		return new PointD (x, y);
+		return new PointD (x, -y);
 	}
 
 	void SetColorFromCircle (PointD point)
 	{
-		double x;
-		double y;
-		color_circle_hue.TranslateCoordinates (this, color_circle_padding, color_circle_padding, out x, out y);
+		color_circle_hue.TranslateCoordinates (this, color_circle_padding, color_circle_padding, out var x, out var y);
 
-		PointI centre = new PointI (100, 100);
+		PointI centre = new PointI (color_circle_radius, color_circle_radius);
 		PointI cursor = new PointI ((int)(point.X - x), (int)(point.Y - y));
 
 		PointI vecCursor = cursor - centre;
 
 		// Numbers from thin air!
-		var hue = (MathF.Atan2 (-vecCursor.X, vecCursor.Y) + MathF.PI) / (2f * MathF.PI) * 360f;
+		var hue = (MathF.Atan2 (vecCursor.Y, -vecCursor.X) + MathF.PI) / (2f * MathF.PI) * 360f;
 
 		var sat = Math.Min(vecCursor.Magnitude () / 100.0, 1);
 
