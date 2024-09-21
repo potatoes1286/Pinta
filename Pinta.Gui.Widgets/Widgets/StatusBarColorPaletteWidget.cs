@@ -299,10 +299,10 @@ public sealed class StatusBarColorPaletteWidget : Gtk.DrawingArea
 
 		var response = dialog.RunBlocking ();
 		if (response == Gtk.ResponseType.Ok) {
-			if(PintaCore.Palette.PrimaryColor != dialog.primaryColor)
-				PintaCore.Palette.PrimaryColor = dialog.primaryColor;
-			if(PintaCore.Palette.SecondaryColor != dialog.secondaryColor)
-				PintaCore.Palette.SecondaryColor = dialog.secondaryColor;
+			if(PintaCore.Palette.PrimaryColor != dialog.primary_color)
+				PintaCore.Palette.PrimaryColor = dialog.primary_color;
+			if(PintaCore.Palette.SecondaryColor != dialog.secondary_color)
+				PintaCore.Palette.SecondaryColor = dialog.secondary_color;
 		}
 
 		dialog.Destroy ();
