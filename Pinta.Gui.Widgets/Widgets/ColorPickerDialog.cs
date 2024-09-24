@@ -528,9 +528,9 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		sliders.Append (hexBox);
 
 
-		hue_cps = new ColorPickerSlider (360, "Hue", current_color.Hue (), this, cps_padding_width);
-		hue_cps.OnValueChange += (sender, args) => {
-			current_color = current_color.SetHsv (hue: args.value);
+		hue_sei = new ScaleEntryInput (360, "Hue", current_color.Hue (), this);
+		hue_sei.OnValueChange += (sender, args) => {
+			current_color.SetHsv (hue: args.value);
 			UpdateColorView ();
 		};
 		hue_cps.gradient.SetDrawFunc ((area, context, width, height) =>
@@ -545,9 +545,9 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 			]));
 		sliders.Append (hue_cps);
 
-		sat_cps = new ColorPickerSlider (100, "Sat", current_color.Sat () * 100.0, this, cps_padding_width);
-		sat_cps.OnValueChange += (sender, args) => {
-			current_color = current_color.SetHsv (saturation: args.value / 100.0);
+		sat_sei = new ScaleEntryInput (100, "Sat", current_color.Sat () * 100.0, this);
+		sat_sei.OnValueChange += (sender, args) => {
+			current_color.SetHsv (saturation: args.value / 100.0);
 			UpdateColorView ();
 		};
 		sat_cps.gradient.SetDrawFunc ((area, context, width, height) =>
@@ -558,9 +558,9 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		sliders.Append (sat_cps);
 
 
-		val_cps = new ColorPickerSlider (100, "Value", current_color.Val () * 100.0, this, cps_padding_width);
-		val_cps.OnValueChange += (sender, args) => {
-			current_color = current_color.SetHsv (value: args.value / 100.0);
+		val_sei = new ScaleEntryInput (100, "Value", current_color.Val () * 100.0, this);
+		val_sei.OnValueChange += (sender, args) => {
+			current_color.SetHsv (value: args.value / 100.0);
 			UpdateColorView ();
 		};
 		val_cps.gradient.SetDrawFunc ((area, context, width, height) =>
@@ -572,35 +572,30 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 		sliders.Append (new Gtk.Separator());
 
-		r_cps = new ColorPickerSlider (255, "Red", current_color.R * 255.0, this, cps_padding_width);
-		r_cps.OnValueChange += (sender, args) => {
-			current_color = current_color.SetRgba (r: args.value / 255.0);
+		r_sei = new ScaleEntryInput (255, "Red", current_color.R * 255.0, this);
+		r_sei.OnValueChange += (sender, args) => {
+			current_color.SetRgba (r: args.value / 255.0);
 			UpdateColorView ();
 		};
-		r_cps.gradient.SetDrawFunc ((area, context, width, height) =>
-			DrawGradient (context, width, height, [current_color.SetRgba (r: 0), current_color.SetRgba (r: 1)]));
-
-		sliders.Append (r_cps);
-		g_cps = new ColorPickerSlider (255, "Green", current_color.G * 255.0, this, cps_padding_width);
-		g_cps.OnValueChange += (sender, args) => {
-			current_color = current_color.SetRgba (g: args.value / 255.0);
+		sliders.Append (r_sei);
+		g_sei = new ScaleEntryInput (255, "Green", current_color.G * 255.0, this);
+		g_sei.OnValueChange += (sender, args) => {
+			current_color.SetRgba (g: args.value / 255.0);
 			UpdateColorView ();
 		};
-		g_cps.gradient.SetDrawFunc ((area, context, width, height) =>
-			DrawGradient (context, width, height, [current_color.SetRgba (g: 0), current_color.SetRgba (g: 1)]));
-		sliders.Append (g_cps);
-		b_cps = new ColorPickerSlider (255, "Blue", current_color.B * 255.0, this, cps_padding_width);
-		b_cps.OnValueChange += (sender, args) => {
-			current_color = current_color.SetRgba (b: args.value / 255.0);
+		sliders.Append (g_sei);
+		b_sei = new ScaleEntryInput (255, "Blue", current_color.B * 255.0, this);
+		b_sei.OnValueChange += (sender, args) => {
+			current_color.SetRgba (b: args.value / 255.0);
 			UpdateColorView ();
 		};
 		b_cps.gradient.SetDrawFunc ((area, context, width, height) =>
 			DrawGradient (context, width, height, [current_color.SetRgba (b: 0), current_color.SetRgba (b: 1)]));
 		sliders.Append (b_cps);
 		sliders.Append (new Gtk.Separator());
-		a_cps = new ColorPickerSlider (255, "Alpha", current_color.A * 255.0, this, cps_padding_width);
-		a_cps.OnValueChange += (sender, args) => {
-			current_color = current_color.SetRgba (a: args.value / 255.0);
+		a_sei = new ScaleEntryInput (255, "Alpha", current_color.A * 255.0, this);
+		a_sei.OnValueChange += (sender, args) => {
+			current_color.SetRgba (a: args.value / 255.0);
 			UpdateColorView ();
 		};
 		a_cps.gradient.SetDrawFunc ((area, context, width, height) =>
@@ -882,7 +877,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 		var sat = Math.Min(vecCursor.Magnitude () / 100.0, 1);
 
-		current_color = current_color.SetHsv (hue: hue, saturation: sat);
+		current_color.SetHsv (hue: hue, saturation: sat);
 		SetColorFromHsv ();
 	}
 
