@@ -11,9 +11,7 @@ using Pinta.Core;
 using Pinta.Gui.Widgets;
 using Color = Cairo.Color;
 using Context = Cairo.Context;
-using Pattern = Cairo.Internal.Pattern;
-using Range = Gtk.Range;
-
+using HeaderBar = Adw.HeaderBar;
 namespace Pinta.Core;
 
 public static class ColorExtensions
@@ -261,7 +259,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 	private readonly ColorPickerSlider a_cps;
 
 
-	private bool mouse_is_down = false;
+	private bool mouse_on_color_circle = false;
 	private bool color_circle_show_value = true;
 
 	private Color current_color;
@@ -292,7 +290,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 
 		private bool entryBeingEdited = false;
-		public ColorPickerSlider (int upper, String text, double val, Gtk.Window topWindow, int spacing, int sliderPadding)
+		public ColorPickerSlider (int upper, String text, double val, Gtk.Window topWindow, int sliderPadding)
 		{
 			//this.Spacing = spacing;
 			maxVal = upper;
@@ -386,7 +384,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		private int suppressEvent = 0;
 		public void SetValue (double val)
 		{
-			suppressEvent = 2;
+			suppressEvent = 1;
 			slider.SetValue (val);
 			// Make sure we do not set the text if we are editing it right now
 			if (topWindow.GetFocus ()?.Parent != input) {
@@ -399,14 +397,28 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 	}
 
-	public ColorPickerDialog (ChromeManager chrome, WorkspaceManager workspace, PaletteManager palette, bool isPrimaryColor)
+	public ColorPickerDialog (ChromeManager chrome, PaletteManager palette, bool isPrimaryColor)
 	{
+		var tbar = new HeaderBar ();
+		var reset_button = new Button ();
+		reset_button.Label = "Reset Color";
+		reset_button.OnClicked += (button, args) => {
+			primary_color = palette.PrimaryColor;
+			secondary_color = palette.SecondaryColor;
+			if (is_editing_primary_color)
+				current_color = primary_color;
+			else
+				current_color = secondary_color;
+		};
+		tbar.PackStart (reset_button);
+		this.SetTitlebar (tbar);
+
 		is_editing_primary_color = isPrimaryColor;
 
 		this.palette = palette;
 		const int spacing = 6;
 
-		if(is_editing_primary_color)
+		if (is_editing_primary_color)
 			current_color = palette.PrimaryColor;
 		else
 			current_color = palette.SecondaryColor;
@@ -516,7 +528,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		sliders.Append (hexBox);
 
 
-		hue_cps = new ColorPickerSlider (360, "Hue", current_color.Hue (), this, spacing, cps_padding_width);
+		hue_cps = new ColorPickerSlider (360, "Hue", current_color.Hue (), this, cps_padding_width);
 		hue_cps.OnValueChange += (sender, args) => {
 			current_color = current_color.SetHsv (hue: args.value);
 			UpdateColorView ();
@@ -533,7 +545,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 			]));
 		sliders.Append (hue_cps);
 
-		sat_cps = new ColorPickerSlider (100, "Sat", current_color.Sat () * 100.0, this, spacing, cps_padding_width);
+		sat_cps = new ColorPickerSlider (100, "Sat", current_color.Sat () * 100.0, this, cps_padding_width);
 		sat_cps.OnValueChange += (sender, args) => {
 			current_color = current_color.SetHsv (saturation: args.value / 100.0);
 			UpdateColorView ();
@@ -546,7 +558,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		sliders.Append (sat_cps);
 
 
-		val_cps = new ColorPickerSlider (100, "Value", current_color.Val () * 100.0, this, spacing, cps_padding_width);
+		val_cps = new ColorPickerSlider (100, "Value", current_color.Val () * 100.0, this, cps_padding_width);
 		val_cps.OnValueChange += (sender, args) => {
 			current_color = current_color.SetHsv (value: args.value / 100.0);
 			UpdateColorView ();
@@ -560,7 +572,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 		sliders.Append (new Gtk.Separator());
 
-		r_cps = new ColorPickerSlider (255, "Red", current_color.R * 255.0, this, spacing, cps_padding_width);
+		r_cps = new ColorPickerSlider (255, "Red", current_color.R * 255.0, this, cps_padding_width);
 		r_cps.OnValueChange += (sender, args) => {
 			current_color = current_color.SetRgba (r: args.value / 255.0);
 			UpdateColorView ();
@@ -569,7 +581,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 			DrawGradient (context, width, height, [current_color.SetRgba (r: 0), current_color.SetRgba (r: 1)]));
 
 		sliders.Append (r_cps);
-		g_cps = new ColorPickerSlider (255, "Green", current_color.G * 255.0, this, spacing, cps_padding_width);
+		g_cps = new ColorPickerSlider (255, "Green", current_color.G * 255.0, this, cps_padding_width);
 		g_cps.OnValueChange += (sender, args) => {
 			current_color = current_color.SetRgba (g: args.value / 255.0);
 			UpdateColorView ();
@@ -577,7 +589,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		g_cps.gradient.SetDrawFunc ((area, context, width, height) =>
 			DrawGradient (context, width, height, [current_color.SetRgba (g: 0), current_color.SetRgba (g: 1)]));
 		sliders.Append (g_cps);
-		b_cps = new ColorPickerSlider (255, "Blue", current_color.B * 255.0, this, spacing, cps_padding_width);
+		b_cps = new ColorPickerSlider (255, "Blue", current_color.B * 255.0, this, cps_padding_width);
 		b_cps.OnValueChange += (sender, args) => {
 			current_color = current_color.SetRgba (b: args.value / 255.0);
 			UpdateColorView ();
@@ -586,7 +598,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 			DrawGradient (context, width, height, [current_color.SetRgba (b: 0), current_color.SetRgba (b: 1)]));
 		sliders.Append (b_cps);
 		sliders.Append (new Gtk.Separator());
-		a_cps = new ColorPickerSlider (255, "Alpha", current_color.A * 255.0, this, spacing, cps_padding_width);
+		a_cps = new ColorPickerSlider (255, "Alpha", current_color.A * 255.0, this, cps_padding_width);
 		a_cps.OnValueChange += (sender, args) => {
 			current_color = current_color.SetRgba (a: args.value / 255.0);
 			UpdateColorView ();
@@ -650,7 +662,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 			PointD relPos;
 
 			if (IsMouseInDrawingArea (this, color_circle_hue, absPos, out relPos)) {
-				mouse_is_down = true;
+				mouse_on_color_circle = true;
 			} else
 
 			if (IsMouseInDrawingArea (this, recentPaletteSwatches, absPos, out relPos)) {
@@ -673,14 +685,14 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 		};
 		click_gesture.OnReleased += (_, e) => {
-			mouse_is_down = false;
+			mouse_on_color_circle = false;
 		};
 		AddController (click_gesture);
 
 		var motion_controller = Gtk.EventControllerMotion.New ();
 		motion_controller.OnMotion += (_, args) => {
 
-			if (mouse_is_down)
+			if (mouse_on_color_circle)
 				SetColorFromCircle(new PointD (args.X, args.Y));
 		};
 		AddController (motion_controller);
@@ -701,7 +713,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 		// --- Initialization (Gtk.Window)
 
-		Title = Translations.GetString ("Color Picker (UNFINISHED)");
+		Title = Translations.GetString ("Color Picker");
 		TransientFor = chrome.MainWindow;
 		Modal = true;
 		IconName = Resources.Icons.ImageResizeCanvas;
