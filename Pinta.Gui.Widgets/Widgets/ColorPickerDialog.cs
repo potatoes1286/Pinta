@@ -401,7 +401,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 	{
 		var tbar = new HeaderBar ();
 		var reset_button = new Button ();
-		reset_button.Label = "Reset Color";
+		reset_button.Label = Translations.GetString("Reset Color");
 		reset_button.OnClicked += (button, args) => {
 			primary_color = palette.PrimaryColor;
 			secondary_color = palette.SecondaryColor;
@@ -409,6 +409,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 				current_color = primary_color;
 			else
 				current_color = secondary_color;
+			UpdateColorView ();
 		};
 		tbar.PackStart (reset_button);
 		this.SetTitlebar (tbar);
@@ -663,6 +664,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 			if (IsMouseInDrawingArea (this, color_circle_hue, absPos, out relPos)) {
 				mouse_on_color_circle = true;
+				SetColorFromCircle(new PointD (e.X, e.Y));
 			} else
 
 			if (IsMouseInDrawingArea (this, recentPaletteSwatches, absPos, out relPos)) {
@@ -770,6 +772,22 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 	private void DrawGradient (Context context, int width, int height, Color[] colors)
 	{
+		var x0 = cps_padding_width;
+		var y0 = cps_padding_height;
+		var w = width - cps_padding_height * 2;
+		var h = height - cps_padding_height * 2;
+		var x1 = x0 + w;
+		var y1 = y0 + h;
+
+		var bsize = h / 2;
+		var blocks = (int)Math.Floor((double)bsize / width);
+
+		context.FillRectangle (new RectangleD (x0, y0, w, h), new Color(1,1,1));
+		for(int i = x0; i < x1; i += bsize * 2)
+			context.FillRectangle (new RectangleD (i, y0, bsize, bsize), new Color(.8,.8,.8));
+		for(int i = x0 + bsize; i < x1; i += bsize * 2)
+			context.FillRectangle (new RectangleD (i, y0 + h / 2, bsize, bsize), new Color(.8,.8,.8));
+
 		var pat = new LinearGradient (
 			cps_padding_width,
 			cps_padding_height,
@@ -902,13 +920,13 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		if(GetFocus ()?.Parent != hex_entry)
 			hex_entry.SetText (current_color.ToHex ());
 
-		if (is_editing_primary_color) {
+		if (is_editing_primary_color)
 			primary_color = current_color;
-			color_display_primary.QueueDraw ();
-		} else {
+		else
 			secondary_color = current_color;
-			color_display_secondary.QueueDraw ();
-		}
+
+		color_display_primary.QueueDraw ();
+		color_display_secondary.QueueDraw ();
 
 		color_circle_cursor.QueueDraw ();
 		return true;
