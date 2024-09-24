@@ -29,10 +29,10 @@ public static class ColorExtensions
 		return $"{r:X2}{g:X2}{b:X2}{a:X2}";
 	}
 
-	public static bool FromHex (this ref Color c, String hex)
+	public static Color? FromHex (this ref Color c, String hex)
 	{
 		if (hex.Length != 6 && hex.Length != 8)
-			return false;
+			return null;
 		try {
 
 			int r = int.Parse (hex.Substring (0, 2), NumberStyles.HexNumber);
@@ -44,11 +44,10 @@ public static class ColorExtensions
 
 			Console.WriteLine($"{r}, {g}, {b}, {a}");
 
-			c.SetRgba (r / 255.0, g / 255.0, b / 255.0, a / 255.0);
+			return c.SetRgba (r / 255.0, g / 255.0, b / 255.0, a / 255.0);
 		} catch {
-			return false;
+			return null;
 		}
-		return true;
 	}
 
 	// See RgbColor.ToHsv
@@ -109,6 +108,11 @@ public static class ColorExtensions
 		return c.Hsv ().Item1;
 	}
 
+	public static Color Copy (this Color c)
+	{
+		return new Color (c.R, c.G, c.B, c.A);
+	}
+
 	public static double Sat (this Color c)
 	{
 		return c.Hsv ().Item2;
@@ -119,13 +123,18 @@ public static class ColorExtensions
 		return c.Hsv ().Item3;
 	}
 
-	public static void SetRgba (this ref Color c, double? r = null, double? g = null, double? b = null, double? a = null)
+	public static Color SetRgba (this ref Color c, double? r = null, double? g = null, double? b = null, double? a = null)
+	{
+		return new Color (r ?? c.R, g ?? c.G, b ?? c.B, a ?? c.A);
+	}
+
+	public static void ChangeRgba (this ref Color c, double? r = null, double? g = null, double? b = null, double? a = null)
 	{
 		c = new Color (r ?? c.R, g ?? c.G, b ?? c.B, a ?? c.A);
 	}
 
 	// See HsvColor.ToRgb
-	public static void SetHsv (this ref Color c, double? hue = null, double? saturation = null, double? value = null)
+	public static Color SetHsv (this ref Color c, double? hue = null, double? saturation = null, double? value = null)
 	{
 		var hsv = c.Hsv ();
 
@@ -212,7 +221,7 @@ public static class ColorExtensions
 		}
 		// return an RgbColor structure, with values scaled
 		// to be between 0 and 255.
-		c = new Color (r, g, b, c.A);
+		return new Color (r, g, b, c.A);
 	}
 }
 
@@ -237,15 +246,17 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 	private readonly Entry hex_entry;
 
-	private readonly ScaleEntryInput hue_sei;
-	private readonly ScaleEntryInput sat_sei;
-	private readonly ScaleEntryInput val_sei;
+	private readonly int cps_padding_height = 10;
+	private readonly int cps_padding_width = 14;
+	private readonly ColorPickerSlider hue_cps;
+	private readonly ColorPickerSlider sat_cps;
+	private readonly ColorPickerSlider val_cps;
 
-	private readonly ScaleEntryInput r_sei;
-	private readonly ScaleEntryInput g_sei;
-	private readonly ScaleEntryInput b_sei;
+	private readonly ColorPickerSlider r_cps;
+	private readonly ColorPickerSlider g_cps;
+	private readonly ColorPickerSlider b_cps;
 
-	private readonly ScaleEntryInput a_sei;
+	private readonly ColorPickerSlider a_cps;
 
 
 	private bool mouse_is_down = false;
@@ -259,13 +270,15 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 	private double last_rendered_value = -1;
 
 	//scale-entry input
-	public class ScaleEntryInput : Gtk.Box
+	public class ColorPickerSlider : Gtk.Box
 	{
 		private readonly Gtk.Window topWindow;
 
 		public Gtk.Label label = new Gtk.Label ();
 		public Gtk.Scale slider = new Gtk.Scale ();
 		public Gtk.Entry input = new Gtk.Entry ();
+		public Gtk.DrawingArea gradient = new Gtk.DrawingArea ();
+		public Gtk.DrawingArea cursor = new Gtk.DrawingArea ();
 
 		public int maxVal;
 
@@ -277,22 +290,52 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 
 		private bool entryBeingEdited = false;
-		public ScaleEntryInput (int upper, String text, double val, Gtk.Window topWindow)
+		public ColorPickerSlider (int upper, String text, double val, Gtk.Window topWindow, int spacing, int sliderPadding)
 		{
+			//this.Spacing = spacing;
 			maxVal = upper;
 			this.topWindow = topWindow;
 			label.SetLabel (text);
 			label.WidthRequest = 50;
 			slider.SetOrientation (Orientation.Horizontal);
 			slider.SetAdjustment (Adjustment.New (0, 0, maxVal + 1, 1, 1, 1));
-			//slider.DrawValue = true;
+
 			slider.WidthRequest = 200;
 			slider.SetValue (val);
+			slider.Opacity = 0;
+
+			gradient.SetSizeRequest (200, this.GetHeight ());
+			cursor.SetSizeRequest (200, this.GetHeight ());
+
+			cursor.SetDrawFunc ((area, context, width, height) => {
+
+				var prog = slider.GetValue () / maxVal * (width - 2 * sliderPadding);
+
+				ReadOnlySpan<PointD> points = stackalloc PointD[5] {
+					new PointD (prog + sliderPadding, height / 2),
+					new PointD (prog + sliderPadding + 5, 3 * height / 4),
+					new PointD (prog + sliderPadding + 5, height),
+					new PointD (prog + sliderPadding - 5, height),
+					new PointD (prog + sliderPadding - 5, 3 * height / 4)
+				};
+				context.FillPolygonal (points, new Color (1,1,1));
+			});
+
+
+
+			var sliderOverlay = new Gtk.Overlay ();
+			sliderOverlay.WidthRequest = 200;
+			sliderOverlay.HeightRequest = this.GetHeight ();
+
+
+			sliderOverlay.AddOverlay (gradient);
+			sliderOverlay.AddOverlay (cursor);
+			sliderOverlay.AddOverlay (slider);
 
 			input.WidthRequest = 50;
 			input.SetText (Convert.ToInt32(val).ToString());
 			this.Append (label);
-			this.Append (slider);
+			this.Append (sliderOverlay);
 			this.Append (input);
 
 
@@ -305,7 +348,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 
 				e.sender_name = label.GetLabel ();
-				e.value = slider.GetValue ();
+				e.value = args.Value;
 				input.SetText (e.value.ToString(CultureInfo.InvariantCulture));
 				OnValueChange?.Invoke (this, e);
 				return false;
@@ -341,13 +384,15 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		private int suppressEvent = 0;
 		public void SetValue (double val)
 		{
-			suppressEvent = 1;
+			suppressEvent = 2;
 			slider.SetValue (val);
 			// Make sure we do not set the text if we are editing it right now
 			if (topWindow.GetFocus ()?.Parent != input) {
 				suppressEvent++;
 				input.SetText (Convert.ToInt32(val).ToString());
 			}
+			gradient.QueueDraw ();
+			cursor.QueueDraw ();
 		}
 
 	}
@@ -385,7 +430,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 		colorDisplayArea.Append (color_display_secondary);
 
-		if(is_editing_primary_color)
+		if (is_editing_primary_color)
 			colorDisplayArea.SelectRow (colorDisplayArea.GetRowAtIndex (0));
 		else
 			colorDisplayArea.SelectRow (colorDisplayArea.GetRowAtIndex (1));
@@ -458,7 +503,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		hex_entry = new Entry { Text_ = current_color.ToHex ()};
 		hex_entry.OnChanged ((o, e) => {
 			if (GetFocus ()?.Parent == hex_entry) {
-				current_color.FromHex (hex_entry.GetText ());
+				current_color = current_color.FromHex (hex_entry.GetText ()) ?? current_color;
 				UpdateColorView ();
 			}
 		});
@@ -469,55 +514,84 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		sliders.Append (hexBox);
 
 
-		hue_sei = new ScaleEntryInput (360, "Hue", current_color.Hue (), this);
-		hue_sei.OnValueChange += (sender, args) => {
-			current_color.SetHsv (hue: args.value);
+		hue_cps = new ColorPickerSlider (360, "Hue", current_color.Hue (), this, spacing, cps_padding_width);
+		hue_cps.OnValueChange += (sender, args) => {
+			current_color = current_color.SetHsv (hue: args.value);
 			UpdateColorView ();
 		};
-		sliders.Append (hue_sei);
+		hue_cps.gradient.SetDrawFunc ((area, context, width, height) =>
+			DrawGradient (context, width, height, [
+				current_color.SetHsv (hue: 0),
+				current_color.SetHsv (hue: 60),
+				current_color.SetHsv (hue: 120),
+				current_color.SetHsv (hue: 180),
+				current_color.SetHsv (hue: 240),
+				current_color.SetHsv (hue: 300),
+				current_color.SetHsv (hue: 360)
+			]));
+		sliders.Append (hue_cps);
 
-		sat_sei = new ScaleEntryInput (100, "Sat", current_color.Sat () * 100.0, this);
-		sat_sei.OnValueChange += (sender, args) => {
-			current_color.SetHsv (saturation: args.value / 100.0);
+		sat_cps = new ColorPickerSlider (100, "Sat", current_color.Sat () * 100.0, this, spacing, cps_padding_width);
+		sat_cps.OnValueChange += (sender, args) => {
+			current_color = current_color.SetHsv (saturation: args.value / 100.0);
 			UpdateColorView ();
 		};
-		sliders.Append (sat_sei);
+		sat_cps.gradient.SetDrawFunc ((area, context, width, height) =>
+			DrawGradient (context, width, height, [
+				current_color.SetHsv (saturation: 0),
+				current_color.SetHsv (saturation: 1)
+			]));
+		sliders.Append (sat_cps);
 
 
-		val_sei = new ScaleEntryInput (100, "Value", current_color.Val () * 100.0, this);
-		val_sei.OnValueChange += (sender, args) => {
-			current_color.SetHsv (value: args.value / 100.0);
+		val_cps = new ColorPickerSlider (100, "Value", current_color.Val () * 100.0, this, spacing, cps_padding_width);
+		val_cps.OnValueChange += (sender, args) => {
+			current_color = current_color.SetHsv (value: args.value / 100.0);
 			UpdateColorView ();
 		};
-		sliders.Append (val_sei);
+		val_cps.gradient.SetDrawFunc ((area, context, width, height) =>
+			DrawGradient (context, width, height, [
+				current_color.SetHsv (value: 0),
+				current_color.SetHsv (value: 1)
+			]));
+		sliders.Append (val_cps);
 
 		sliders.Append (new Gtk.Separator());
 
-		r_sei = new ScaleEntryInput (255, "Red", current_color.R * 255.0, this);
-		r_sei.OnValueChange += (sender, args) => {
-			current_color.SetRgba (r: args.value / 255.0);
+		r_cps = new ColorPickerSlider (255, "Red", current_color.R * 255.0, this, spacing, cps_padding_width);
+		r_cps.OnValueChange += (sender, args) => {
+			current_color = current_color.SetRgba (r: args.value / 255.0);
 			UpdateColorView ();
 		};
-		sliders.Append (r_sei);
-		g_sei = new ScaleEntryInput (255, "Green", current_color.G * 255.0, this);
-		g_sei.OnValueChange += (sender, args) => {
-			current_color.SetRgba (g: args.value / 255.0);
+		r_cps.gradient.SetDrawFunc ((area, context, width, height) =>
+			DrawGradient (context, width, height, [current_color.SetRgba (r: 0), current_color.SetRgba (r: 1)]));
+
+		sliders.Append (r_cps);
+		g_cps = new ColorPickerSlider (255, "Green", current_color.G * 255.0, this, spacing, cps_padding_width);
+		g_cps.OnValueChange += (sender, args) => {
+			current_color = current_color.SetRgba (g: args.value / 255.0);
 			UpdateColorView ();
 		};
-		sliders.Append (g_sei);
-		b_sei = new ScaleEntryInput (255, "Blue", current_color.B * 255.0, this);
-		b_sei.OnValueChange += (sender, args) => {
-			current_color.SetRgba (b: args.value / 255.0);
+		g_cps.gradient.SetDrawFunc ((area, context, width, height) =>
+			DrawGradient (context, width, height, [current_color.SetRgba (g: 0), current_color.SetRgba (g: 1)]));
+		sliders.Append (g_cps);
+		b_cps = new ColorPickerSlider (255, "Blue", current_color.B * 255.0, this, spacing, cps_padding_width);
+		b_cps.OnValueChange += (sender, args) => {
+			current_color = current_color.SetRgba (b: args.value / 255.0);
 			UpdateColorView ();
 		};
-		sliders.Append (b_sei);
+		b_cps.gradient.SetDrawFunc ((area, context, width, height) =>
+			DrawGradient (context, width, height, [current_color.SetRgba (b: 0), current_color.SetRgba (b: 1)]));
+		sliders.Append (b_cps);
 		sliders.Append (new Gtk.Separator());
-		a_sei = new ScaleEntryInput (255, "Alpha", current_color.A * 255.0, this);
-		a_sei.OnValueChange += (sender, args) => {
-			current_color.SetRgba (a: args.value / 255.0);
+		a_cps = new ColorPickerSlider (255, "Alpha", current_color.A * 255.0, this, spacing, cps_padding_width);
+		a_cps.OnValueChange += (sender, args) => {
+			current_color = current_color.SetRgba (a: args.value / 255.0);
 			UpdateColorView ();
 		};
-		sliders.Append (a_sei);
+		a_cps.gradient.SetDrawFunc ((area, context, width, height) =>
+			DrawGradient (context, width, height, [current_color.SetRgba (a: 0), current_color.SetRgba (a: 1)]));
+		sliders.Append (a_cps);
 
 		#endregion
 
@@ -680,6 +754,25 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		g.DrawRectangle (new RectangleD (loc.X - 5, loc.Y - 5, 10, 10), new Color (1, 1, 1), 1);
 	}
 
+	private void DrawGradient (Context context, int width, int height, Color[] colors)
+	{
+		var pat = new LinearGradient (
+			cps_padding_width,
+			cps_padding_height,
+			width - cps_padding_width,
+			height - cps_padding_height);
+
+		for (int i = 0; i < colors.Length; i++)
+			pat.AddColorStop (i / (double)(colors.Length - 1), colors[i]);
+
+		context.Rectangle (cps_padding_width,
+			cps_padding_height,
+			width - cps_padding_width * 2,
+			height - cps_padding_height * 2);
+		context.SetSource (pat);
+		context.Fill ();
+	}
+
 	private void RedrawValue (bool force = false)
 	{
 		var val = current_color.Val ();
@@ -778,20 +871,22 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 		var sat = Math.Min(vecCursor.Magnitude () / 100.0, 1);
 
-		current_color.SetHsv (hue: hue, saturation: sat);
-		SetColorFromHsv ();
+		current_color = current_color.SetHsv (hue: hue, saturation: sat);
+		//SetColorFromHsv ();
 	}
 
 	bool SetColorFromHsv ()
 	{
-		hue_sei.SetValue (current_color.Hue ());
-		sat_sei.SetValue (current_color.Sat () * 100.0);
-		val_sei.SetValue (current_color.Val () * 100.0);
+		hue_cps.SetValue (current_color.Hue ());
+		sat_cps.SetValue (current_color.Sat () * 100.0);
+		val_cps.SetValue (current_color.Val () * 100.0);
 
-		r_sei.SetValue (current_color.R * 255.0);
-		g_sei.SetValue (current_color.G * 255.0);
-		b_sei.SetValue (current_color.B * 255.0);
-		a_sei.SetValue (current_color.A * 255.0);
+		r_cps.SetValue (current_color.R * 255.0);
+		g_cps.SetValue (current_color.G * 255.0);
+		b_cps.SetValue (current_color.B * 255.0);
+		a_cps.SetValue (current_color.A * 255.0);
+
+
 
 		if(GetFocus ()?.Parent != hex_entry)
 			hex_entry.SetText (current_color.ToHex ());
