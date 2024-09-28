@@ -285,6 +285,18 @@ public sealed class StatusBarColorPaletteWidget : Gtk.DrawingArea
 		};
 
 		dialog.Show ();
+		/*var ccd = Gtk.ColorChooserDialog.New (title, PintaCore.Chrome.MainWindow);
+		ccd.UseAlpha = true;
+		ccd.SetColor (initialColor);
+
+		Cairo.Color result = initialColor;
+
+		var response = ccd.RunBlocking ();
+		if (response == Gtk.ResponseType.Ok)
+			ccd.GetColor (out result);
+
+		ccd.Destroy ();*/
+
 		var response = dialog.RunBlocking ();
 		if (response == Gtk.ResponseType.Ok) {
 			if(PintaCore.Palette.PrimaryColor != dialog.primary_color)
