@@ -28,6 +28,7 @@ using System;
 using System.Linq;
 using Cairo;
 using Pinta.Core;
+using Pinta.Gui.Widgets.Widgets;
 
 namespace Pinta.Gui.Widgets;
 
@@ -75,10 +76,12 @@ public sealed class StatusBarColorPaletteWidget : Gtk.DrawingArea
 	{
 		switch (GetElementAtPoint (point)) {
 			case WidgetElement.PrimaryColor:
-				/*PintaCore.Palette.PrimaryColor = */GetUserChosenColor (PintaCore.Palette.PrimaryColor, true);
+				/*PintaCore.Palette.PrimaryColor = */
+				GetUserChosenColor (PintaCore.Palette.PrimaryColor, true);
 				break;
 			case WidgetElement.SecondaryColor:
-				/*PintaCore.Palette.SecondaryColor = */GetUserChosenColor (PintaCore.Palette.SecondaryColor, false);
+				/*PintaCore.Palette.SecondaryColor = */
+				GetUserChosenColor (PintaCore.Palette.SecondaryColor, false);
 				break;
 			case WidgetElement.SwapColors:
 				var temp = PintaCore.Palette.PrimaryColor;
@@ -245,7 +248,7 @@ public sealed class StatusBarColorPaletteWidget : Gtk.DrawingArea
 					text = Translations.GetString ("Left click to set primary color. Right click to set secondary color. Middle click to choose palette color.");
 				break;
 			case WidgetElement.RecentColorsPalette:
-				if (GetSwatchAtLocation (point, recent_palette_rect,true) >= 0)
+				if (GetSwatchAtLocation (point, recent_palette_rect, true) >= 0)
 					text = Translations.GetString ("Left click to set primary color. Right click to set secondary color.");
 				break;
 			case WidgetElement.PrimaryColor:
@@ -299,9 +302,9 @@ public sealed class StatusBarColorPaletteWidget : Gtk.DrawingArea
 
 		var response = dialog.RunBlocking ();
 		if (response == Gtk.ResponseType.Ok) {
-			if(PintaCore.Palette.PrimaryColor != dialog.primary_color)
+			if (PintaCore.Palette.PrimaryColor != dialog.primary_color)
 				PintaCore.Palette.PrimaryColor = dialog.primary_color;
-			if(PintaCore.Palette.SecondaryColor != dialog.secondary_color)
+			if (PintaCore.Palette.SecondaryColor != dialog.secondary_color)
 				PintaCore.Palette.SecondaryColor = dialog.secondary_color;
 		}
 

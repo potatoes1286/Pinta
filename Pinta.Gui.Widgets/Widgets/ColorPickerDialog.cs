@@ -1,55 +1,70 @@
 using System;
-using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
-using Adw;
 using Cairo;
-using Cairo.Internal;
 using Gdk;
-using GdkPixbuf;
 using GLib;
-using GObject;
 using Gtk;
-using Pango;
 using Pinta.Core;
-using Pinta.Gui.Widgets;
 using Color = Cairo.Color;
 using Context = Cairo.Context;
 using HeaderBar = Adw.HeaderBar;
-using MessageDialog = Adw.MessageDialog;
-using Pattern = Cairo.Pattern;
 using String = System.String;
 
-namespace Pinta.Core;
+namespace Pinta.Gui.Widgets.Widgets;
 
 // TODO LIST
-/* translation strings
+/*
  * Modify swatches
- * Entries expanding on window expand
  */
 
 public static class ColorExtensions
 {
-
-	// todo: maybe handle no-alpha output?
-
-	public static String ToHex (this Color c)
+	/// <summary>
+	/// Returns the color value as a string in hex color format.
+	/// </summary>
+	/// <param name="addAlpha">If false, returns in format "RRGGBB" (Alpha will not affect result).<br/>
+	/// Otherwise, returns in format "RRGGBBAA".</param>
+	public static String ToHex (this Color c, bool addAlpha = true)
 	{
-		int r = Convert.ToInt32(c.R * 255.0);
-		int g = Convert.ToInt32(c.G * 255.0);
-		int b = Convert.ToInt32(c.B * 255.0);
-		int a = Convert.ToInt32(c.A * 255.0);
+		int r = Convert.ToInt32 (c.R * 255.0);
+		int g = Convert.ToInt32 (c.G * 255.0);
+		int b = Convert.ToInt32 (c.B * 255.0);
+		int a = Convert.ToInt32 (c.A * 255.0);
 
-		return $"{r:X2}{g:X2}{b:X2}{a:X2}";
+		if (addAlpha)
+			return $"{r:X2}{g:X2}{b:X2}{a:X2}";
+		else
+			return $"{r:X2}{g:X2}{b:X2}";
 	}
 
-	// todo: handle # in front of hex
+	/// <summary>
+	/// Returns a color from an RGBA hex color. Accepts the following formats:<br/>
+	/// RRGGBBAA<br/>
+	/// RRGGBB<br/>
+	/// RGB (Expands to RRGGBB)<br/>
+	/// RGBA (Expands to RRGGBBAA)<br/>
+	/// Will accept leading #.
+	/// </summary>
+	/// <param name="hex">Hex color as a string.</param>
+	/// <returns>Resulting color. If null, the method could not parse it.</returns>
 	public static Color? FromHex (String hex)
 	{
+		if (hex[0] == '#') {
+			Console.WriteLine (hex);
+			hex = hex.Remove (0, 1);
+			Console.WriteLine (hex);
+		}
+
+		// handle shorthand hex
+		if (hex.Length == 3)
+			hex = $"{hex[0]}{hex[0]}{hex[1]}{hex[1]}{hex[2]}{hex[2]}";
+		if (hex.Length == 4)
+			hex = $"{hex[0]}{hex[0]}{hex[1]}{hex[1]}{hex[2]}{hex[2]}{hex[3]}{hex[3]}";
+
 		if (hex.Length != 6 && hex.Length != 8)
 			return null;
 		try {
-
 			int r = int.Parse (hex.Substring (0, 2), NumberStyles.HexNumber);
 			int g = int.Parse (hex.Substring (2, 2), NumberStyles.HexNumber);
 			int b = int.Parse (hex.Substring (4, 2), NumberStyles.HexNumber);
@@ -57,31 +72,54 @@ public static class ColorExtensions
 			if (hex.Length > 6)
 				a = int.Parse (hex.Substring (5, 2), NumberStyles.HexNumber);
 
-			Console.WriteLine($"{r}, {g}, {b}, {a}");
+			Console.WriteLine ($"{r}, {g}, {b}, {a}");
 
-			return new Color().SetRgba (r / 255.0, g / 255.0, b / 255.0, a / 255.0);
+			return new Color ().SetRgba (r / 255.0, g / 255.0, b / 255.0, a / 255.0);
 		} catch {
 			return null;
 		}
 	}
 
-	// Copied from RgbColor.ToHsv
-	// h, s, v: 0 <= h <= 360; 0 <= s,v <= 1
-	public static Tuple<double, double, double> GetHsv (this Color c)
+	/// <summary>
+	/// Hue, Saturation, Value description of a color.<br/>
+	/// Hue varies from 0 - 360.<br/>
+	/// Saturation and value varies from 0 - 1.
+	/// </summary>
+	public struct Hsv
+	{
+		public readonly double h;
+		public readonly double s;
+		public readonly double v;
+
+		public Hsv (double h, double s, double v)
+		{
+			this.h = h;
+			this.s = s;
+			this.v = v;
+		}
+	}
+
+	/// <summary>
+	/// Copied from RgbColor.ToHsv<br/>
+	/// Returns the Cairo color in HSV value.
+	/// </summary>
+	/// <returns>HSV struct.
+	/// Hue varies from 0 - 360.<br/>
+	/// Saturation and value varies from 0 - 1.
+	/// </returns>
+	public static Hsv GetHsv (this Color c)
 	{
 		// In this function, R, G, and B values must be scaled
 		// to be between 0 and 1.
 		// HsvColor.Hue will be a value between 0 and 360, and
 		// HsvColor.Saturation and value are between 0 and 1.
 
+		double h, s, v;
+
 		double min = Math.Min (Math.Min (c.R, c.G), c.B);
 		double max = Math.Max (Math.Max (c.R, c.G), c.B);
 
 		double delta = max - min;
-
-		double h;
-		double s;
-		double v;
 
 		if (max == 0 || delta == 0) {
 			// R, G, and B must be 0, or all the same.
@@ -115,47 +153,57 @@ public static class ColorExtensions
 
 		// Scale to the requirements of this
 		// application. All values are between 0 and 255.
-		return new (h,s,v);
+		return new Hsv (h, s, v);
 	}
 
-	public static double Hue (this Color c)
-	{
-		return c.GetHsv ().Item1;
-	}
-
+	/// <summary>
+	/// Returns a copy of the color.
+	/// </summary>
 	public static Color Copy (this Color c)
 	{
 		return new Color (c.R, c.G, c.B, c.A);
 	}
 
-	public static double Sat (this Color c)
-	{
-		return c.GetHsv ().Item2;
-	}
-
-	public static double Val (this Color c)
-	{
-		return c.GetHsv ().Item3;
-	}
-
+	/// <summary>
+	/// Returns a copy of the original color, replacing provided RGBA components.
+	/// </summary>
+	/// <param name="r">Red component, 0 - 1</param>
+	/// <param name="g">Green component, 0 - 1</param>
+	/// <param name="b">Blue component, 0 - 1</param>
+	/// <param name="a">Alpha component, 0 - 1</param>
 	public static Color SetRgba (this Color c, double? r = null, double? g = null, double? b = null, double? a = null)
 	{
 		return new Color (r ?? c.R, g ?? c.G, b ?? c.B, a ?? c.A);
 	}
 
-	public static Color SetHsv (this Color c, double? hue = null, double? sat = null, double? value = null)
+	/// <summary>
+	/// Returns a copy of the original color, replacing provided HSV components.
+	/// </summary>
+	/// <param name="hue">Hue component, 0 - 360</param>
+	/// <param name="sat">Saturation component, 0 - 1</param>
+	/// <param name="value">Value component, 0 - 1</param>
+	/// <param name="alpha">Alpha component, 0 - 1</param>
+	public static Color SetHsv (this Color c, double? hue = null, double? sat = null, double? value = null, double? alpha = null)
 	{
 		var hsv = c.GetHsv ();
 
-		double h = hue ?? hsv.Item1;
-		double s = sat ?? hsv.Item2;
-		double v = value ?? hsv.Item3;
+		double h = hue ?? hsv.h;
+		double s = sat ?? hsv.s;
+		double v = value ?? hsv.v;
+		double a = alpha ?? c.A;
 
-		return FromHsv (h, s, v, c.A);
+		return FromHsv (h, s, v, a);
 	}
 
-	// Copied from HsvColor.ToRgb
-	public static Color FromHsv (double hue, double sat, double value, double alpha)
+	/// <summary>
+	/// Copied from HsvColor.ToRgb<br/>
+	/// Returns a Cairo color using the given HSV values.
+	/// </summary>
+	/// <param name="hue">Hue component, 0 - 360</param>
+	/// <param name="sat">Saturation component, 0 - 1</param>
+	/// <param name="value">Value component, 0 - 1</param>
+	/// <param name="alpha">Alpha component, 0 - 1</param>
+	public static Color FromHsv (double hue, double sat, double value, double alpha = 1)
 	{
 		double h = hue;
 		double s = sat;
@@ -245,53 +293,54 @@ public static class ColorExtensions
 		return new Color (r, g, b, alpha);
 	}
 }
+
 // used for the right hand side sliders
-	// uses a label, scale, and entry
-	// then hides the scale and draws over it
-	// with a drawingarea
+// uses a label, scale, and entry
+// then hides the scale and draws over it
+// with a drawingarea
 public class ColorPickerSlider : Gtk.Box
+{
+	private readonly Gtk.Window topWindow;
+
+	public Gtk.Label label = new Gtk.Label ();
+	public Gtk.Scale slider = new Gtk.Scale ();
+	public Gtk.Entry input = new Gtk.Entry ();
+	public Gtk.DrawingArea gradient = new Gtk.DrawingArea ();
+	public Gtk.DrawingArea cursor = new Gtk.DrawingArea ();
+
+	public int maxVal;
+
+	public class OnChangeValArgs : EventArgs
 	{
-		private readonly Gtk.Window topWindow;
-
-		public Gtk.Label label = new Gtk.Label ();
-		public Gtk.Scale slider = new Gtk.Scale ();
-		public Gtk.Entry input = new Gtk.Entry ();
-		public Gtk.DrawingArea gradient = new Gtk.DrawingArea ();
-		public Gtk.DrawingArea cursor = new Gtk.DrawingArea ();
-
-		public int maxVal;
-
-		public class OnChangeValArgs : EventArgs
-		{
-			public string sender_name = "";
-			public double value;
-		}
+		public string sender_name = "";
+		public double value;
+	}
 
 
-		private bool entryBeingEdited = false;
-		public ColorPickerSlider (int upper, String text, double val, Gtk.Window topWindow, int sliderPadding)
-		{
-			//this.Spacing = spacing;
-			maxVal = upper;
-			this.topWindow = topWindow;
-			label.SetLabel (text);
-			label.WidthRequest = 50;
-			slider.SetOrientation (Orientation.Horizontal);
-			slider.SetAdjustment (Adjustment.New (0, 0, maxVal + 1, 1, 1, 1));
+	private bool entryBeingEdited = false;
+	public ColorPickerSlider (int upper, String text, double val, Gtk.Window topWindow, int sliderPadding, int maxWidthChars = 3)
+	{
+		//this.Spacing = spacing;
+		maxVal = upper;
+		this.topWindow = topWindow;
+		label.SetLabel (text);
+		label.WidthRequest = 50;
+		slider.SetOrientation (Orientation.Horizontal);
+		slider.SetAdjustment (Adjustment.New (0, 0, maxVal + 1, 1, 1, 1));
 
-			slider.WidthRequest = 200;
-			slider.SetValue (val);
-			slider.Opacity = 0;
+		slider.WidthRequest = 200;
+		slider.SetValue (val);
+		slider.Opacity = 0;
 
-			gradient.SetSizeRequest (200, this.GetHeight ());
-			cursor.SetSizeRequest (200, this.GetHeight ());
+		gradient.SetSizeRequest (200, this.GetHeight ());
+		cursor.SetSizeRequest (200, this.GetHeight ());
 
-			cursor.SetDrawFunc ((area, context, width, height) => {
-				int outlineWidth = 2;
+		cursor.SetDrawFunc ((area, context, width, height) => {
+			int outlineWidth = 2;
 
-				var prog = slider.GetValue () / maxVal * (width - 2 * sliderPadding);
+			var prog = slider.GetValue () / maxVal * (width - 2 * sliderPadding);
 
-				ReadOnlySpan<PointD> points = stackalloc PointD[] {
+			ReadOnlySpan<PointD> points = stackalloc PointD[] {
 					new PointD (prog + sliderPadding, height / 2),
 					new PointD (prog + sliderPadding + 4, 3 * height / 4),
 					new PointD (prog + sliderPadding + 4, height - outlineWidth / 2),
@@ -300,90 +349,91 @@ public class ColorPickerSlider : Gtk.Box
 					new PointD (prog + sliderPadding, height / 2)
 				};
 
-				context.LineWidth = outlineWidth;
-				context.DrawPolygonal (points, new Color (0, 0, 0), LineCap.Butt);
-				context.FillPolygonal (points, new Color (1,1,1));
-			});
+			context.LineWidth = outlineWidth;
+			context.DrawPolygonal (points, new Color (0, 0, 0), LineCap.Butt);
+			context.FillPolygonal (points, new Color (1, 1, 1));
+		});
 
 
 
-			var sliderOverlay = new Gtk.Overlay ();
-			sliderOverlay.WidthRequest = 200;
-			sliderOverlay.HeightRequest = this.GetHeight ();
+		var sliderOverlay = new Gtk.Overlay ();
+		sliderOverlay.WidthRequest = 200;
+		sliderOverlay.HeightRequest = this.GetHeight ();
 
 
-			sliderOverlay.AddOverlay (gradient);
-			sliderOverlay.AddOverlay (cursor);
-			sliderOverlay.AddOverlay (slider);
+		sliderOverlay.AddOverlay (gradient);
+		sliderOverlay.AddOverlay (cursor);
+		sliderOverlay.AddOverlay (slider);
 
-			var sliderDraw = new Gtk.DrawingArea ();
-			sliderDraw.WidthRequest = 200;
-			sliderDraw.HeightRequest = 50;
+		var sliderDraw = new Gtk.DrawingArea ();
+		sliderDraw.WidthRequest = 200;
+		sliderDraw.HeightRequest = 50;
 
-			input.WidthRequest = 50;
-			input.Hexpand = false;
-			input.SetText (Convert.ToInt32(val).ToString());
-			this.Append (label);
-			this.Append (sliderOverlay);
-			this.Append (input);
+		input.MaxWidthChars = maxWidthChars;
+		input.WidthRequest = 50;
+		input.Hexpand = false;
+		input.SetText (Convert.ToInt32 (val).ToString ());
+		this.Append (label);
+		this.Append (sliderOverlay);
+		this.Append (input);
 
-			//slider.Opacity = 0;
+		//slider.Opacity = 0;
 
-			slider.OnChangeValue += (sender, args) => {
-				var e = new OnChangeValArgs ();
-
-
-				e.sender_name = label.GetLabel ();
-				e.value = args.Value;
-				input.SetText (e.value.ToString(CultureInfo.InvariantCulture));
-				OnValueChange?.Invoke (this, e);
-				return false;
-			};
-
-			input.OnChanged ((o, e) => {
-				if (suppressEvent > 0) {
-					suppressEvent--;
-					return;
-				}
-				var t = o.GetText ();
-				double val;
-				var success = double.TryParse (t, CultureInfo.InvariantCulture, out val);
-
-				if (val > maxVal) {
-					val = maxVal;
-					input.SetText (Convert.ToInt32(val).ToString());
-				}
+		slider.OnChangeValue += (sender, args) => {
+			var e = new OnChangeValArgs ();
 
 
-				if (success) {
-					var e2 = new OnChangeValArgs ();
-					e2.sender_name = label.GetLabel ();
-					e2.value = val;
-					OnValueChange?.Invoke (this, e2);
-				}
-			});
+			e.sender_name = label.GetLabel ();
+			e.value = args.Value;
+			input.SetText (e.value.ToString (CultureInfo.InvariantCulture));
+			OnValueChange?.Invoke (this, e);
+			return false;
+		};
 
-		}
-
-		public event EventHandler<OnChangeValArgs> OnValueChange;
-
-		private int suppressEvent = 0;
-		public void SetValue (double val)
-		{
-			slider.SetValue (val);
-			// Make sure we do not set the text if we are editing it right now
-			if (topWindow.GetFocus ()?.Parent != input) {
-				// hackjob
-				// prevents OnValueChange from firing when we change the value internally
-				// because OnValueChange eventually calls SetValue so it causes a stack overflow
-				suppressEvent = 2;
-				input.SetText (Convert.ToInt32(val).ToString());
+		input.OnChanged ((o, e) => {
+			if (suppressEvent > 0) {
+				suppressEvent--;
+				return;
 			}
-			gradient.QueueDraw ();
-			cursor.QueueDraw ();
-		}
+			var t = o.GetText ();
+			double val;
+			var success = double.TryParse (t, CultureInfo.InvariantCulture, out val);
+
+			if (val > maxVal) {
+				val = maxVal;
+				input.SetText (Convert.ToInt32 (val).ToString ());
+			}
+
+
+			if (success) {
+				var e2 = new OnChangeValArgs ();
+				e2.sender_name = label.GetLabel ();
+				e2.value = val;
+				OnValueChange?.Invoke (this, e2);
+			}
+		});
 
 	}
+
+	public event EventHandler<OnChangeValArgs> OnValueChange;
+
+	private int suppressEvent = 0;
+	public void SetValue (double val)
+	{
+		slider.SetValue (val);
+		// Make sure we do not set the text if we are editing it right now
+		if (topWindow.GetFocus ()?.Parent != input) {
+			// hackjob
+			// prevents OnValueChange from firing when we change the value internally
+			// because OnValueChange eventually calls SetValue so it causes a stack overflow
+			suppressEvent = 2;
+			input.SetText (Convert.ToInt32 (val).ToString ());
+		}
+		gradient.QueueDraw ();
+		cursor.QueueDraw ();
+	}
+
+}
 
 public class CheckboxOption : Gtk.Box
 {
@@ -392,12 +442,13 @@ public class CheckboxOption : Gtk.Box
 	public readonly Gtk.Label label;
 	public CheckboxOption (int spacing, bool active, string text)
 	{
+		this.Spacing = spacing;
 		button = new Gtk.CheckButton ();
 		state = active;
 		button.Active = state;
 		this.Append (button);
 
-		label = new Gtk.Label { Label_ = "Show Value" };
+		label = new Gtk.Label { Label_ = text };
 		this.Append (label);
 	}
 
@@ -411,12 +462,13 @@ public class CheckboxOption : Gtk.Box
 
 public sealed class ColorPickerDialog : Gtk.Dialog
 {
+	// palette
 	private readonly int palette_display_size = 50;
 	private readonly int palette_display_border_thickness = 3;
 	private readonly Gtk.DrawingArea palette_display_primary;
 	private readonly Gtk.DrawingArea palette_display_secondary;
 
-
+	// color surface
 	private readonly int picker_surface_radius = 200 / 2;
 	private readonly int picker_surface_padding = 10;
 	private readonly Gtk.DrawingArea picker_surface;
@@ -427,12 +479,13 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		SatAndVal
 	}
 	private ColorSurfaceType picker_surface_type = ColorSurfaceType.HueAndSat;
-
+	// color surface options
 	private bool mouse_on_picker_surface = false;
 	private readonly CheckboxOption picker_surface_option_draw_value;
 
-
+	// hex + sliders
 	private readonly Entry hex_entry;
+	private readonly CheckboxOption hex_entry_add_alpha;
 
 	private readonly int cps_padding_height = 10;
 	private readonly int cps_padding_width = 14;
@@ -447,7 +500,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 	private readonly ColorPickerSlider a_cps;
 
 
-	//private Color current_color;
+	// common state
 	private bool is_editing_primary_color = true;
 	public Color primary_color;
 	public Color secondary_color;
@@ -467,13 +520,30 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		}
 	}
 
+	const int spacing = 6;
+
 
 
 	public ColorPickerDialog (ChromeManager chrome, PaletteManager palette, bool isPrimaryColor)
 	{
+		is_editing_primary_color = isPrimaryColor;
+
+		primary_color = palette.PrimaryColor;
+		secondary_color = palette.SecondaryColor;
+
+
+		// Top part of the color picker.
+		// Includes palette, color surface, sliders/hex
+		// Basically, the not-swatches
+		var colorPickerBox = new Gtk.Box { Spacing = spacing };
+
+
+		// titlebar of color picker; mainly just contains the reset color button
+		#region Titlebar
+
 		var tbar = new HeaderBar ();
 		var reset_button = new Button ();
-		reset_button.Label = Translations.GetString("Reset Color");
+		reset_button.Label = Translations.GetString ("Reset Color");
 		reset_button.OnClicked += (button, args) => {
 			primary_color = palette.PrimaryColor;
 			secondary_color = palette.SecondaryColor;
@@ -482,40 +552,42 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		tbar.PackStart (reset_button);
 		this.SetTitlebar (tbar);
 
-		is_editing_primary_color = isPrimaryColor;
-		const int spacing = 6;
-
-		primary_color = palette.PrimaryColor;
-		secondary_color = palette.SecondaryColor;
+		#endregion
 
 
-		var topBox = new Gtk.Box {Spacing = spacing};
-
+		// Active palette contains the primary/secondary colors on the left of the color picker
 		#region Active Palette Display
-		var colorDisplayArea = new Gtk.ListBox ();
+
+		var paletteDisplayBox = new Gtk.ListBox ();
 
 		palette_display_primary = new Gtk.DrawingArea ();
 		palette_display_primary.SetSizeRequest (palette_display_size, palette_display_size);
 		palette_display_primary.SetDrawFunc ((area, context, width, height) => DrawPaletteDisplay (context, primary_color));
-
-		colorDisplayArea.Append (palette_display_primary);
+		paletteDisplayBox.Append (palette_display_primary);
 
 		palette_display_secondary = new Gtk.DrawingArea ();
 		palette_display_secondary.SetSizeRequest (palette_display_size, palette_display_size);
 		palette_display_secondary.SetDrawFunc ((area, context, width, height) => DrawPaletteDisplay (context, secondary_color));
+		paletteDisplayBox.Append (palette_display_secondary);
 
-		colorDisplayArea.Append (palette_display_secondary);
-
+		// Set initial selected row
 		if (is_editing_primary_color)
-			colorDisplayArea.SelectRow (colorDisplayArea.GetRowAtIndex (0));
+			paletteDisplayBox.SelectRow (paletteDisplayBox.GetRowAtIndex (0));
 		else
-			colorDisplayArea.SelectRow (colorDisplayArea.GetRowAtIndex (1));
-		colorDisplayArea.SetSelectionMode (SelectionMode.Single);
+			paletteDisplayBox.SelectRow (paletteDisplayBox.GetRowAtIndex (1));
+		paletteDisplayBox.SetSelectionMode (SelectionMode.Single);
 
-		colorDisplayArea.OnRowSelected += HandlePaletteSelect;
+		// Handle on select; index 0 -> primary; index 1 -> secondary
+		paletteDisplayBox.OnRowSelected += ((sender, args) => {
+			is_editing_primary_color = args.Row?.GetIndex () == 0;
+			UpdateView ();
+		});
 
 		#endregion
 
+
+		// Picker surface; either is Hue & Sat (Color circle) or Sat & Val (Square)
+		// Also contains picker surface switcher + options
 		#region Picker Surface
 
 		var pickerSurfaceDrawSize = (picker_surface_radius + picker_surface_padding) * 2;
@@ -530,21 +602,21 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 		// TODO: Remember setting!
 		// When Gir.Core supports it, this should probably be replaced with a toggle group.
-		var pickerSurfaceHueSat = Gtk.ToggleButton.NewWithLabel ("Hue & Sat");
-		if(picker_surface_type == ColorSurfaceType.HueAndSat)
+		var pickerSurfaceHueSat = Gtk.ToggleButton.NewWithLabel (Translations.GetString ("Hue & Sat"));
+		if (picker_surface_type == ColorSurfaceType.HueAndSat)
 			pickerSurfaceHueSat.Toggle ();
 		pickerSurfaceHueSat.OnToggled += (sender, args) => {
 			picker_surface_type = ColorSurfaceType.HueAndSat;
-			picker_surface_option_draw_value?.SetOpacity (1);
+			picker_surface_option_draw_value?.SetVisible (true);
 			UpdateView ();
 		};
 
-		var pickerSurfaceSatVal = Gtk.ToggleButton.NewWithLabel ("Sat & Value");
-		if(picker_surface_type == ColorSurfaceType.SatAndVal)
+		var pickerSurfaceSatVal = Gtk.ToggleButton.NewWithLabel (Translations.GetString ("Sat & Value"));
+		if (picker_surface_type == ColorSurfaceType.SatAndVal)
 			pickerSurfaceSatVal.Toggle ();
 		pickerSurfaceSatVal.OnToggled += (sender, args) => {
 			picker_surface_type = ColorSurfaceType.SatAndVal;
-			picker_surface_option_draw_value?.SetOpacity (0);
+			picker_surface_option_draw_value?.SetVisible (false);
 			UpdateView ();
 		};
 
@@ -564,7 +636,15 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		picker_surface_cursor = new Gtk.DrawingArea ();
 		picker_surface_cursor.WidthRequest = pickerSurfaceDrawSize;
 		picker_surface_cursor.HeightRequest = pickerSurfaceDrawSize;
-		picker_surface_cursor.SetDrawFunc ((area, context, width, height) => DrawCursor (context));
+		picker_surface_cursor.SetDrawFunc ((area, context, width, height) => {
+			context.Antialias = Antialias.None;
+			var loc = HsvToPickerLocation (CurrentColor.GetHsv (), picker_surface_radius);
+			loc = new PointD (loc.X + picker_surface_radius + picker_surface_padding, loc.Y + picker_surface_radius + picker_surface_padding);
+
+			context.FillRectangle (new RectangleD (loc.X - 5, loc.Y - 5, 10, 10), CurrentColor);
+			context.DrawRectangle (new RectangleD (loc.X - 5, loc.Y - 5, 10, 10), new Color (0, 0, 0), 4);
+			context.DrawRectangle (new RectangleD (loc.X - 5, loc.Y - 5, 10, 10), new Color (1, 1, 1), 1);
+		});
 
 		// Overlays the cursor on top of the surface
 		var pickerSurfaceOverlay = new Gtk.Overlay ();
@@ -577,7 +657,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 		// Show Value toggle for hue sat picker surface
 		// TODO: Remember setting!
-		picker_surface_option_draw_value = new CheckboxOption (spacing, true, "Show Value");
+		picker_surface_option_draw_value = new CheckboxOption (spacing, true, Translations.GetString ("Show Value"));
 		picker_surface_option_draw_value.button.OnToggled += (o, e) => {
 			picker_surface_option_draw_value.Toggle ();
 			UpdateView ();
@@ -586,15 +666,24 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 		#endregion
 
+
+		// Handles the ColorPickerSliders + Hex entry.
 		#region SliderAndHex
 
-		var sliders = new Gtk.Box {Spacing = spacing};
+		var sliders = new Gtk.Box { Spacing = spacing };
 		sliders.SetOrientation (Orientation.Vertical);
 
 		var hexBox = new Gtk.Box { Spacing = spacing };
 
-		hexBox.Append (new Label { Label_ = "Hex", WidthRequest = 50});
-		hex_entry = new Entry { Text_ = CurrentColor.ToHex ()};
+		// todo: remember option
+		hex_entry_add_alpha = new CheckboxOption (spacing, true, Translations.GetString ("Add Alpha"));
+		hex_entry_add_alpha.button.OnToggled += (sender, args) => {
+			hex_entry_add_alpha.Toggle ();
+			UpdateView ();
+		};
+
+		hexBox.Append (new Label { Label_ = Translations.GetString ("Hex"), WidthRequest = 50 });
+		hex_entry = new Entry { Text_ = CurrentColor.ToHex (hex_entry_add_alpha.state), MaxWidthChars = 10 };
 		hex_entry.OnChanged ((o, e) => {
 			if (GetFocus ()?.Parent == hex_entry) {
 				CurrentColor = ColorExtensions.FromHex (hex_entry.GetText ()) ?? CurrentColor;
@@ -604,11 +693,13 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 		hexBox.Append (hex_entry);
 
+		hexBox.Append (hex_entry_add_alpha);
+
 
 		sliders.Append (hexBox);
 
 
-		hue_cps = new ColorPickerSlider (360, "Hue", CurrentColor.Hue (), this, cps_padding_width);
+		hue_cps = new ColorPickerSlider (360, Translations.GetString ("Hue"), CurrentColor.GetHsv ().h, this, cps_padding_width);
 		hue_cps.OnValueChange += (sender, args) => {
 			CurrentColor = CurrentColor.SetHsv (hue: args.value);
 			UpdateView ();
@@ -625,7 +716,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 			]));
 		sliders.Append (hue_cps);
 
-		sat_cps = new ColorPickerSlider (100, "Sat", CurrentColor.Sat () * 100.0, this, cps_padding_width);
+		sat_cps = new ColorPickerSlider (100, Translations.GetString ("Sat"), CurrentColor.GetHsv ().s * 100.0, this, cps_padding_width);
 		sat_cps.OnValueChange += (sender, args) => {
 			CurrentColor = CurrentColor.SetHsv (sat: args.value / 100.0);
 			UpdateView ();
@@ -638,7 +729,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		sliders.Append (sat_cps);
 
 
-		val_cps = new ColorPickerSlider (100, "Value", CurrentColor.Val () * 100.0, this, cps_padding_width);
+		val_cps = new ColorPickerSlider (100, Translations.GetString ("Value"), CurrentColor.GetHsv ().v * 100.0, this, cps_padding_width);
 		val_cps.OnValueChange += (sender, args) => {
 			CurrentColor = CurrentColor.SetHsv (value: args.value / 100.0);
 			UpdateView ();
@@ -650,9 +741,9 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 			]));
 		sliders.Append (val_cps);
 
-		sliders.Append (new Gtk.Separator());
+		sliders.Append (new Gtk.Separator ());
 
-		r_cps = new ColorPickerSlider (255, "Red", CurrentColor.R * 255.0, this, cps_padding_width);
+		r_cps = new ColorPickerSlider (255, Translations.GetString ("Red"), CurrentColor.R * 255.0, this, cps_padding_width);
 		r_cps.OnValueChange += (sender, args) => {
 			CurrentColor = CurrentColor.SetRgba (r: args.value / 255.0);
 			UpdateView ();
@@ -661,7 +752,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 			DrawGradient (context, width, height, [CurrentColor.SetRgba (r: 0), CurrentColor.SetRgba (r: 1)]));
 
 		sliders.Append (r_cps);
-		g_cps = new ColorPickerSlider (255, "Green", CurrentColor.G * 255.0, this, cps_padding_width);
+		g_cps = new ColorPickerSlider (255, Translations.GetString ("Green"), CurrentColor.G * 255.0, this, cps_padding_width);
 		g_cps.OnValueChange += (sender, args) => {
 			CurrentColor = CurrentColor.SetRgba (g: args.value / 255.0);
 			UpdateView ();
@@ -669,7 +760,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		g_cps.gradient.SetDrawFunc ((area, context, width, height) =>
 			DrawGradient (context, width, height, [CurrentColor.SetRgba (g: 0), CurrentColor.SetRgba (g: 1)]));
 		sliders.Append (g_cps);
-		b_cps = new ColorPickerSlider (255, "Blue", CurrentColor.B * 255.0, this, cps_padding_width);
+		b_cps = new ColorPickerSlider (255, Translations.GetString ("Blue"), CurrentColor.B * 255.0, this, cps_padding_width);
 		b_cps.OnValueChange += (sender, args) => {
 			CurrentColor = CurrentColor.SetRgba (b: args.value / 255.0);
 			UpdateView ();
@@ -677,8 +768,8 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		b_cps.gradient.SetDrawFunc ((area, context, width, height) =>
 			DrawGradient (context, width, height, [CurrentColor.SetRgba (b: 0), CurrentColor.SetRgba (b: 1)]));
 		sliders.Append (b_cps);
-		sliders.Append (new Gtk.Separator());
-		a_cps = new ColorPickerSlider (255, "Alpha", CurrentColor.A * 255.0, this, cps_padding_width);
+		sliders.Append (new Gtk.Separator ());
+		a_cps = new ColorPickerSlider (255, Translations.GetString ("Alpha"), CurrentColor.A * 255.0, this, cps_padding_width);
 		a_cps.OnValueChange += (sender, args) => {
 			CurrentColor = CurrentColor.SetRgba (a: args.value / 255.0);
 			UpdateView ();
@@ -695,7 +786,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		var swatchBox = new Gtk.Box { Spacing = spacing };
 		swatchBox.SetOrientation (Orientation.Vertical);
 		var recentPaletteSwatches = new DrawingArea ();
-		recentPaletteSwatches.WidthRequest =  500;
+		recentPaletteSwatches.WidthRequest = 500;
 		recentPaletteSwatches.HeightRequest = StatusBarColorPaletteWidget.SWATCH_SIZE * StatusBarColorPaletteWidget.PALETTE_ROWS;
 
 		recentPaletteSwatches.SetDrawFunc ((area, g, width, height) => {
@@ -713,7 +804,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 		var paletteSwatches = new DrawingArea ();
 
-		paletteSwatches.WidthRequest =  500;
+		paletteSwatches.WidthRequest = 500;
 		paletteSwatches.HeightRequest = StatusBarColorPaletteWidget.SWATCH_SIZE * StatusBarColorPaletteWidget.PALETTE_ROWS;
 
 		paletteSwatches.SetDrawFunc ((area, g, width, height) => {
@@ -740,11 +831,11 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 			if (IsMouseInDrawingArea (this, picker_surface, absPos, out relPos)) {
 				mouse_on_picker_surface = true;
-				SetColorFromPickerSurface(new PointD (e.X, e.Y));
+				SetColorFromPickerSurface (new PointD (e.X, e.Y));
 			} else
 
 			if (IsMouseInDrawingArea (this, recentPaletteSwatches, absPos, out relPos)) {
-				var recent_index = StatusBarColorPaletteWidget.GetSwatchAtLocation (relPos, new RectangleD(), true);
+				var recent_index = StatusBarColorPaletteWidget.GetSwatchAtLocation (relPos, new RectangleD (), true);
 
 				if (recent_index >= 0) {
 					CurrentColor = PintaCore.Palette.CurrentPalette[recent_index];
@@ -753,7 +844,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 			} else
 
 			if (IsMouseInDrawingArea (this, paletteSwatches, absPos, out relPos)) {
-				var index = StatusBarColorPaletteWidget.GetSwatchAtLocation (relPos, new RectangleD());
+				var index = StatusBarColorPaletteWidget.GetSwatchAtLocation (relPos, new RectangleD ());
 
 				if (index >= 0) {
 					CurrentColor = PintaCore.Palette.CurrentPalette[index];
@@ -771,7 +862,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		motion_controller.OnMotion += (_, args) => {
 
 			if (mouse_on_picker_surface)
-				SetColorFromPickerSurface(new PointD (args.X, args.Y));
+				SetColorFromPickerSurface (new PointD (args.X, args.Y));
 		};
 		AddController (motion_controller);
 
@@ -781,12 +872,12 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		Gtk.Box mainVbox = new () { Spacing = spacing };
 		mainVbox.SetOrientation (Gtk.Orientation.Vertical);
 
-		topBox.Append (colorDisplayArea);
-		topBox.Append (pickerSurfaceBox);
-		topBox.Append (sliders);
+		colorPickerBox.Append (paletteDisplayBox);
+		colorPickerBox.Append (pickerSurfaceBox);
+		colorPickerBox.Append (sliders);
 
 
-		mainVbox.Append (topBox);
+		mainVbox.Append (colorPickerBox);
 		mainVbox.Append (swatchBox);
 
 		// --- Initialization (Gtk.Window)
@@ -817,9 +908,11 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		picker_surface.QueueDraw ();
 
 		// Redraw cps
-		hue_cps.SetValue (CurrentColor.Hue ());
-		sat_cps.SetValue (CurrentColor.Sat () * 100.0);
-		val_cps.SetValue (CurrentColor.Val () * 100.0);
+		var hsv = CurrentColor.GetHsv ();
+
+		hue_cps.SetValue (hsv.h);
+		sat_cps.SetValue (hsv.s * 100.0);
+		val_cps.SetValue (hsv.v * 100.0);
 
 		r_cps.SetValue (CurrentColor.R * 255.0);
 		g_cps.SetValue (CurrentColor.G * 255.0);
@@ -828,46 +921,26 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 
 		// Update hex
-		if(GetFocus ()?.Parent != hex_entry)
-			hex_entry.SetText (CurrentColor.ToHex ());
+		if (GetFocus ()?.Parent != hex_entry)
+			hex_entry.SetText (CurrentColor.ToHex (hex_entry_add_alpha.state));
 
 		// Redraw palette displays
 		palette_display_primary.QueueDraw ();
 		palette_display_secondary.QueueDraw ();
 	}
 
+	// Checks whether the mousepos- relative to the topwidget- is within the drawing area
+	// returns relpos, the relative position of the mouse to the area
 	public static bool IsMouseInDrawingArea (Widget topWidget, Widget area, PointD mousePos, out PointD relPos, PointD? offset = null)
 	{
 		var off = offset ?? new PointD (0, 0);
 		area.TranslateCoordinates (topWidget, off.X, off.Y, out double x, out double y);
 		relPos = new PointD ((mousePos.X - x), (mousePos.Y - y));
-		if (relPos.X >= 0 && relPos.X <= area.WidthRequest && relPos.Y >= 0 && relPos.Y <= area.HeightRequest) {
+		if (relPos.X >= 0 && relPos.X <= area.WidthRequest && relPos.Y >= 0 && relPos.Y <= area.HeightRequest)
 			return true;
-		} else {
-			return false;
-		}
-	}
-
-	private void HandlePaletteSelect (ListBox sender, ListBox.RowSelectedSignalArgs args)
-	{
-		if (args.Row?.GetIndex () == 0)
-			is_editing_primary_color = true;
 		else
-			is_editing_primary_color = false;
+			return false;
 
-		picker_surface_cursor.QueueDraw ();
-		UpdateView ();
-	}
-
-	private void DrawCursor (Context g)
-	{
-		g.Antialias = Antialias.None;
-		var loc = HsvToPickerLocation (CurrentColor.GetHsv (), picker_surface_radius);
-		loc = new PointD (loc.X + picker_surface_radius + picker_surface_padding, loc.Y + picker_surface_radius + picker_surface_padding);
-
-		g.FillRectangle (new RectangleD (loc.X - 5, loc.Y - 5, 10, 10), CurrentColor);
-		g.DrawRectangle (new RectangleD (loc.X - 5, loc.Y - 5, 10, 10), new Color (0, 0, 0), 4);
-		g.DrawRectangle (new RectangleD (loc.X - 5, loc.Y - 5, 10, 10), new Color (1, 1, 1), 1);
 	}
 
 	private void DrawGradient (Context context, int width, int height, Color[] colors)
@@ -881,18 +954,15 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		var y1 = y0 + draw_h;
 
 		var bsize = draw_h / 2;
-		var blocks = (int)Math.Floor((double)bsize / width);
 
 		// Draw transparency background
-		// todo merge fors
-		context.FillRectangle (new RectangleD (x0, y0, draw_w, draw_h), new Color(1,1,1));
+		context.FillRectangle (new RectangleD (x0, y0, draw_w, draw_h), new Color (1, 1, 1));
 		for (int x = x0; x < x1; x += bsize * 2) {
 			var bwidth = bsize;
 			if (x + bsize > x1)
 				bwidth = x1 - x;
-			context.FillRectangle (new RectangleD (x, y0, bwidth, bsize), new Color(.8,.8,.8));
+			context.FillRectangle (new RectangleD (x, y0, bwidth, bsize), new Color (.8, .8, .8));
 		}
-
 		for (int x = x0 + bsize; x < x1; x += bsize * 2) {
 			var bwidth = bsize;
 			if (x + bsize > x1)
@@ -903,7 +973,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		var pat = new LinearGradient (x0, y0, x1, y1);
 
 		for (int i = 0; i < colors.Length; i++)
-			pat.AddColorStop (i / (double)(colors.Length - 1), colors[i]);
+			pat.AddColorStop (i / (double) (colors.Length - 1), colors[i]);
 
 		context.Rectangle (x0, y0, draw_w, draw_h);
 		context.SetSource (pat);
@@ -918,13 +988,13 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 		// make checker pattern
 		if (c.A != 1) {
-			g.FillRectangle (new RectangleD (xy, xy, wh, wh), new Color(1,1,1));
-			g.FillRectangle (new RectangleD (xy, xy, wh / 2, wh / 2), new Color(.8,.8,.8));
-			g.FillRectangle (new RectangleD (xy + wh / 2, xy + wh / 2, wh / 2, wh / 2), new Color(.8,.8,.8));
+			g.FillRectangle (new RectangleD (xy, xy, wh, wh), new Color (1, 1, 1));
+			g.FillRectangle (new RectangleD (xy, xy, wh / 2, wh / 2), new Color (.8, .8, .8));
+			g.FillRectangle (new RectangleD (xy + wh / 2, xy + wh / 2, wh / 2, wh / 2), new Color (.8, .8, .8));
 		}
 
 		g.FillRectangle (new RectangleD (xy, xy, wh, wh), c);
-		g.DrawRectangle (new RectangleD (xy, xy, wh, wh), new Color(0,0,0), palette_display_border_thickness);
+		g.DrawRectangle (new RectangleD (xy, xy, wh, wh), new Color (0, 0, 0), palette_display_border_thickness);
 	}
 
 	private void DrawColorSurface (Context g)
@@ -937,8 +1007,6 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		int x1 = x0 + picker_surface_padding;
 		int y1 = y0 + picker_surface_padding;
 		PointI center = new PointI (rad, rad);
-
-		// todo: change this using memtexture method
 
 		if (picker_surface_type == ColorSurfaceType.HueAndSat) {
 			int stride = draw_width * 4;
@@ -956,24 +1024,24 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 						double v = 1;
 						if (picker_surface_option_draw_value.state)
-							v = CurrentColor.Val ();
+							v = CurrentColor.GetHsv ().v;
 
-						var c = ColorExtensions.FromHsv (h, s, v, 1);
+						var c = ColorExtensions.FromHsv (h, s, v);
 
-						data[(y * stride) + (x * 4) + 0] = (byte)(c.R * 255);
-						data[(y * stride) + (x * 4) + 1] = (byte)(c.G * 255);
-						data[(y * stride) + (x * 4) + 2] = (byte)(c.B * 255);
-						data[(y * stride) + (x * 4) + 3] = (byte)(255);
+						data[(y * stride) + (x * 4) + 0] = (byte) (c.R * 255);
+						data[(y * stride) + (x * 4) + 1] = (byte) (c.G * 255);
+						data[(y * stride) + (x * 4) + 2] = (byte) (c.B * 255);
+						data[(y * stride) + (x * 4) + 3] = (byte) (255);
 					} else {
-						data[(y * stride) + (x * 4) + 0] = (byte)(0);
-						data[(y * stride) + (x * 4) + 1] = (byte)(0);
-						data[(y * stride) + (x * 4) + 2] = (byte)(0);
-						data[(y * stride) + (x * 4) + 3] = (byte)(0);
+						data[(y * stride) + (x * 4) + 0] = (byte) (0);
+						data[(y * stride) + (x * 4) + 1] = (byte) (0);
+						data[(y * stride) + (x * 4) + 2] = (byte) (0);
+						data[(y * stride) + (x * 4) + 3] = (byte) (0);
 					}
 				}
 			}
 
-			var img = MemoryTexture.New (draw_width, draw_height, MemoryFormat.R8g8b8a8, Bytes.New (data), (UIntPtr)stride).ToSurface ();
+			var img = MemoryTexture.New (draw_width, draw_height, MemoryFormat.R8g8b8a8, Bytes.New (data), (UIntPtr) stride).ToSurface ();
 			g.SetSourceSurface (img, picker_surface_padding, picker_surface_padding);
 			g.Paint ();
 		} else if (picker_surface_type == ColorSurfaceType.SatAndVal) {
@@ -982,36 +1050,36 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 			Span<byte> data = stackalloc byte[draw_height * stride];
 
 			for (int y = 0; y < draw_height; y++) {
-				double s = 1.0 - (double)y / (draw_height - 1);
+				double s = 1.0 - (double) y / (draw_height - 1);
 				for (int x = 0; x < draw_width; x++) {
 					double v = (double) x / (draw_width - 1);
-					var c = ColorExtensions.FromHsv (CurrentColor.Hue (), s, v, 1);
-					data[(y * stride) + (x * 3) + 0] = (byte)(c.R * 255);
-					data[(y * stride) + (x * 3) + 1] = (byte)(c.G * 255);
-					data[(y * stride) + (x * 3) + 2] = (byte)(c.B * 255);
+					var c = ColorExtensions.FromHsv (CurrentColor.GetHsv ().h, s, v);
+					data[(y * stride) + (x * 3) + 0] = (byte) (c.R * 255);
+					data[(y * stride) + (x * 3) + 1] = (byte) (c.G * 255);
+					data[(y * stride) + (x * 3) + 2] = (byte) (c.B * 255);
 				}
 			}
 
-			var img = MemoryTexture.New (draw_width, draw_height, MemoryFormat.R8g8b8, Bytes.New (data), (UIntPtr)stride).ToSurface ();
+			var img = MemoryTexture.New (draw_width, draw_height, MemoryFormat.R8g8b8, Bytes.New (data), (UIntPtr) stride).ToSurface ();
 			g.SetSourceSurface (img, picker_surface_padding, picker_surface_padding);
 			g.Paint ();
 		}
 	}
 
 	// Takes in HSV values as tuple (h,s,v) and returns the position of that color in the picker surface.
-	private PointD HsvToPickerLocation (Tuple<double, double, double> hsv, int radius)
+	private PointD HsvToPickerLocation (ColorExtensions.Hsv hsv, int radius)
 	{
 		if (picker_surface_type == ColorSurfaceType.HueAndSat) {
-			var rad = hsv.Item1 * (Math.PI / 180.0);
+			var rad = hsv.h * (Math.PI / 180.0);
 			var mult = radius;
-			var mag = hsv.Item2 * mult;
+			var mag = hsv.s * mult;
 			var x = Math.Cos (rad) * mag;
 			var y = Math.Sin (rad) * mag;
 			return new PointD (x, -y);
 		} else if (picker_surface_type == ColorSurfaceType.SatAndVal) {
 			int size = radius * 2;
-			var x = hsv.Item3 * (size - 1);
-			var y = size - hsv.Item2 * (size - 1);
+			var x = hsv.v * (size - 1);
+			var y = size - hsv.s * (size - 1);
 			return new PointD (x - radius, y - radius);
 		}
 
@@ -1027,14 +1095,13 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		PointI vecCursor = cursor - centre;
 
 		if (picker_surface_type == ColorSurfaceType.HueAndSat) {
-			var hue = (MathF.Atan2 (vecCursor.Y, -vecCursor.X) + MathF.PI) / (2f * MathF.PI) * 360f;
+			var hue = (Math.Atan2 (vecCursor.Y, -vecCursor.X) + Math.PI) / (2f * Math.PI) * 360f;
 
 			var sat = Math.Min (vecCursor.Magnitude () / 100.0, 1);
 
 			CurrentColor = CurrentColor.SetHsv (hue: hue, sat: sat);
 		} else if (picker_surface_type == ColorSurfaceType.SatAndVal) {
 			int size = picker_surface_radius * 2;
-			//todo: double
 			if (cursor.X > size - 1)
 				cursor = cursor with { X = size - 1 };
 			if (cursor.X < 0)
@@ -1043,8 +1110,8 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 				cursor = cursor with { Y = size - 1 };
 			if (cursor.Y < 0)
 				cursor = cursor with { Y = 0 };
-			float s = 1f - (float)cursor.Y / (size - 1);
-			float v = (float)cursor.X / (size - 1);
+			double s = 1f - (double) cursor.Y / (size - 1);
+			double v = (double) cursor.X / (size - 1);
 			CurrentColor = CurrentColor.SetHsv (sat: s, value: v);
 		}
 		UpdateView ();
