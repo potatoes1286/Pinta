@@ -13,11 +13,6 @@ using String = System.String;
 
 namespace Pinta.Gui.Widgets.Widgets;
 
-// TODO LIST
-/*
- * Modify swatches
- */
-
 public static class ColorExtensions
 {
 	/// <summary>
@@ -412,7 +407,6 @@ public class ColorPickerSlider : Gtk.Box
 				OnValueChange?.Invoke (this, e2);
 			}
 		});
-
 	}
 
 	public event EventHandler<OnChangeValArgs> OnValueChange;
@@ -431,6 +425,41 @@ public class ColorPickerSlider : Gtk.Box
 		}
 		gradient.QueueDraw ();
 		cursor.QueueDraw ();
+	}
+
+	public static void DrawGradient (Context context, int width, int height, int padwidth, int padheight, Color[] colors)
+	{
+		context.Antialias = Antialias.None;
+		var draw_w = width - padwidth * 2;
+		var draw_h = height - padheight * 2;
+		var x1 = padwidth + draw_w;
+		var y1 = padheight + draw_h;
+
+		var bsize = draw_h / 2;
+
+		// Draw transparency background
+		context.FillRectangle (new RectangleD (padwidth, padheight, draw_w, draw_h), new Color (1, 1, 1));
+		for (int x = padwidth; x < x1; x += bsize * 2) {
+			var bwidth = bsize;
+			if (x + bsize > x1)
+				bwidth = x1 - x;
+			context.FillRectangle (new RectangleD (x, padheight, bwidth, bsize), new Color (.8, .8, .8));
+		}
+		for (int x = padwidth + bsize; x < x1; x += bsize * 2) {
+			var bwidth = bsize;
+			if (x + bsize > x1)
+				bwidth = x1 - x;
+			context.FillRectangle (new RectangleD (x, padheight + draw_h / 2, bwidth, bsize), new Color (.8, .8, .8));
+		}
+
+		var pat = new LinearGradient (padwidth, padheight, x1, y1);
+
+		for (int i = 0; i < colors.Length; i++)
+			pat.AddColorStop (i / (double) (colors.Length - 1), colors[i]);
+
+		context.Rectangle (padwidth, padheight, draw_w, draw_h);
+		context.SetSource (pat);
+		context.Fill ();
 	}
 
 }
@@ -465,7 +494,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 	// palette
 	private readonly int palette_display_size = 50;
 	private readonly int palette_display_border_thickness = 3;
-	private readonly Gtk.DrawingArea[] palette_displays;
+	private readonly Gtk.DrawingArea[] color_displays;
 	//private readonly Gtk.DrawingArea palette_display_primary;
 	//private readonly Gtk.DrawingArea palette_display_secondary;
 
@@ -511,22 +540,18 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		set => colors[color_index] = value;
 	}
 
-	const int spacing = 6;
+	private const int spacing = 6;
 
-
-
-	public ColorPickerDialog (ChromeManager chrome, Color[] palette, int currentColorIndex)
+	public ColorPickerDialog (ChromeManager chrome, Color[] palette, int currentColorIndex, string title = "Color Picker")
 	{
 		original_colors = palette;
 		colors = (Color[])palette.Clone ();
 		color_index = currentColorIndex;
 
-
 		// Top part of the color picker.
 		// Includes palette, color surface, sliders/hex
 		// Basically, the not-swatches
 		var colorPickerBox = new Gtk.Box { Spacing = spacing };
-
 
 		// titlebar of color picker; mainly just contains the reset color button
 		#region Titlebar
@@ -545,32 +570,50 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 
 		// Active palette contains the primary/secondary colors on the left of the color picker
-		#region Active Palette Display
+		#region Color Display
 
-		var paletteDisplayBox = new Gtk.ListBox ();
+		var colorDisplayBox = new Gtk.Box {Spacing = spacing};
+		colorDisplayBox.SetOrientation (Orientation.Vertical);
 
-		palette_displays = new DrawingArea[original_colors.Length];
+		var colorDisplayList = new Gtk.ListBox ();
+
+		if (colors.Length > 1) {
+			var colorDisplaySwap = new Gtk.Button ();
+			colorDisplaySwap.SetIconName (Resources.Icons.LayerMoveUp);
+			colorDisplaySwap.OnClicked += (sender, args) => {
+				var swap = colors[0];
+				for (int i = 0; i < colors.Length - 1; i++)
+					colors[i] = colors[i + 1];
+				colors[^1] = swap;
+				UpdateView ();
+			};
+
+			colorDisplayBox.Append (colorDisplaySwap);
+		}
+
+		color_displays = new DrawingArea[original_colors.Length];
 		for (int i = 0; i < original_colors.Length; i++) {
 			var display = new Gtk.DrawingArea ();
 			display.SetSizeRequest (palette_display_size, palette_display_size);
 			var pos = i;
 			display.SetDrawFunc ((area, context, width, height) => DrawPaletteDisplay (context, colors[pos]));
-			paletteDisplayBox.Append (display);
-			palette_displays[i] = display;
+			colorDisplayList.Append (display);
+			color_displays[i] = display;
 		}
 
 		// Set initial selected row
-		paletteDisplayBox.SetSelectionMode (SelectionMode.Single);
-		paletteDisplayBox.SelectRow (paletteDisplayBox.GetRowAtIndex (currentColorIndex));
+		colorDisplayList.SetSelectionMode (SelectionMode.Single);
+		colorDisplayList.SelectRow (colorDisplayList.GetRowAtIndex (currentColorIndex));
 
 		// Handle on select; index 0 -> primary; index 1 -> secondary
-		paletteDisplayBox.OnRowSelected += ((sender, args) => {
+		colorDisplayList.OnRowSelected += ((sender, args) => {
 			color_index = args.Row?.GetIndex () ?? 0;
 			UpdateView ();
 		});
 
-		#endregion
+		colorDisplayBox.Append (colorDisplayList);
 
+		#endregion
 
 		// Picker surface; either is Hue & Sat (Color circle) or Sat & Val (Square)
 		// Also contains picker surface switcher + options
@@ -585,8 +628,6 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		pickerSurfaceType.Homogeneous = true;
 		pickerSurfaceType.Halign = Align.Center;
 
-
-		// TODO: Remember setting!
 		// When Gir.Core supports it, this should probably be replaced with a toggle group.
 		var pickerSurfaceHueSat = Gtk.ToggleButton.NewWithLabel (Translations.GetString ("Hue & Sat"));
 		if (picker_surface_type == ColorSurfaceType.HueAndSat)
@@ -642,7 +683,6 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		pickerSurfaceBox.Append (pickerSurfaceOverlay);
 
 		// Show Value toggle for hue sat picker surface
-		// TODO: Remember setting!
 		picker_surface_option_draw_value = new CheckboxOption (spacing, true, Translations.GetString ("Show Value"));
 		picker_surface_option_draw_value.button.OnToggled += (o, e) => {
 			picker_surface_option_draw_value.Toggle ();
@@ -661,7 +701,6 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 		var hexBox = new Gtk.Box { Spacing = spacing };
 
-		// todo: remember option
 		hex_entry_add_alpha = new CheckboxOption (spacing, true, Translations.GetString ("Add Alpha"));
 		hex_entry_add_alpha.button.OnToggled += (sender, args) => {
 			hex_entry_add_alpha.Toggle ();
@@ -691,7 +730,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 			UpdateView ();
 		};
 		hue_cps.gradient.SetDrawFunc ((area, context, width, height) =>
-			DrawGradient (context, width, height, [
+			ColorPickerSlider.DrawGradient (context, width, height, cps_padding_width, cps_padding_height, [
 				CurrentColor.SetHsv (hue: 0),
 				CurrentColor.SetHsv (hue: 60),
 				CurrentColor.SetHsv (hue: 120),
@@ -708,7 +747,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 			UpdateView ();
 		};
 		sat_cps.gradient.SetDrawFunc ((area, context, width, height) =>
-			DrawGradient (context, width, height, [
+			ColorPickerSlider.DrawGradient (context, width, height, cps_padding_width, cps_padding_height, [
 				CurrentColor.SetHsv (sat: 0),
 				CurrentColor.SetHsv (sat: 1)
 			]));
@@ -721,7 +760,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 			UpdateView ();
 		};
 		val_cps.gradient.SetDrawFunc ((area, context, width, height) =>
-			DrawGradient (context, width, height, [
+			ColorPickerSlider.DrawGradient (context, width, height, cps_padding_width, cps_padding_height, [
 				CurrentColor.SetHsv (value: 0),
 				CurrentColor.SetHsv (value: 1)
 			]));
@@ -735,7 +774,8 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 			UpdateView ();
 		};
 		r_cps.gradient.SetDrawFunc ((area, context, width, height) =>
-			DrawGradient (context, width, height, [CurrentColor.SetRgba (r: 0), CurrentColor.SetRgba (r: 1)]));
+			ColorPickerSlider.DrawGradient (context, width, height, cps_padding_width, cps_padding_height,
+				[CurrentColor.SetRgba (r: 0), CurrentColor.SetRgba (r: 1)]));
 
 		sliders.Append (r_cps);
 		g_cps = new ColorPickerSlider (255, Translations.GetString ("Green"), CurrentColor.G * 255.0, this, cps_padding_width);
@@ -744,7 +784,8 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 			UpdateView ();
 		};
 		g_cps.gradient.SetDrawFunc ((area, context, width, height) =>
-			DrawGradient (context, width, height, [CurrentColor.SetRgba (g: 0), CurrentColor.SetRgba (g: 1)]));
+			ColorPickerSlider.DrawGradient (context, width, height, cps_padding_width, cps_padding_height,
+				[CurrentColor.SetRgba (g: 0), CurrentColor.SetRgba (g: 1)]));
 		sliders.Append (g_cps);
 		b_cps = new ColorPickerSlider (255, Translations.GetString ("Blue"), CurrentColor.B * 255.0, this, cps_padding_width);
 		b_cps.OnValueChange += (sender, args) => {
@@ -752,7 +793,8 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 			UpdateView ();
 		};
 		b_cps.gradient.SetDrawFunc ((area, context, width, height) =>
-			DrawGradient (context, width, height, [CurrentColor.SetRgba (b: 0), CurrentColor.SetRgba (b: 1)]));
+			ColorPickerSlider.DrawGradient (context, width, height, cps_padding_width, cps_padding_height,
+				[CurrentColor.SetRgba (b: 0), CurrentColor.SetRgba (b: 1)]));
 		sliders.Append (b_cps);
 		sliders.Append (new Gtk.Separator ());
 		a_cps = new ColorPickerSlider (255, Translations.GetString ("Alpha"), CurrentColor.A * 255.0, this, cps_padding_width);
@@ -761,10 +803,12 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 			UpdateView ();
 		};
 		a_cps.gradient.SetDrawFunc ((area, context, width, height) =>
-			DrawGradient (context, width, height, [CurrentColor.SetRgba (a: 0), CurrentColor.SetRgba (a: 1)]));
+			ColorPickerSlider.DrawGradient (context, width, height, cps_padding_width, cps_padding_height,
+				[CurrentColor.SetRgba (a: 0), CurrentColor.SetRgba (a: 1)]));
 		sliders.Append (a_cps);
 
 		#endregion
+
 
 		#region Swatch
 
@@ -805,6 +849,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		swatchBox.Append (paletteSwatches);
 
 		#endregion
+
 
 		#region Mouse Handler
 
@@ -858,7 +903,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		Gtk.Box mainVbox = new () { Spacing = spacing };
 		mainVbox.SetOrientation (Gtk.Orientation.Vertical);
 
-		colorPickerBox.Append (paletteDisplayBox);
+		colorPickerBox.Append (colorDisplayBox);
 		colorPickerBox.Append (pickerSurfaceBox);
 		colorPickerBox.Append (sliders);
 
@@ -868,7 +913,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 		// --- Initialization (Gtk.Window)
 
-		Title = Translations.GetString ("Color Picker");
+		Title = Translations.GetString (title);
 		TransientFor = chrome.MainWindow;
 		Modal = true;
 		IconName = Resources.Icons.ImageResizeCanvas;
@@ -911,7 +956,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 			hex_entry.SetText (CurrentColor.ToHex (hex_entry_add_alpha.state));
 
 		// Redraw palette displays
-		foreach (var display in palette_displays) {
+		foreach (var display in color_displays) {
 			display.QueueDraw ();
 		}
 	}
@@ -927,43 +972,6 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 			return true;
 		return false;
 
-	}
-
-	private void DrawGradient (Context context, int width, int height, Color[] colors)
-	{
-		context.Antialias = Antialias.None;
-		var x0 = cps_padding_width;
-		var y0 = cps_padding_height;
-		var draw_w = width - cps_padding_width * 2;
-		var draw_h = height - cps_padding_height * 2;
-		var x1 = x0 + draw_w;
-		var y1 = y0 + draw_h;
-
-		var bsize = draw_h / 2;
-
-		// Draw transparency background
-		context.FillRectangle (new RectangleD (x0, y0, draw_w, draw_h), new Color (1, 1, 1));
-		for (int x = x0; x < x1; x += bsize * 2) {
-			var bwidth = bsize;
-			if (x + bsize > x1)
-				bwidth = x1 - x;
-			context.FillRectangle (new RectangleD (x, y0, bwidth, bsize), new Color (.8, .8, .8));
-		}
-		for (int x = x0 + bsize; x < x1; x += bsize * 2) {
-			var bwidth = bsize;
-			if (x + bsize > x1)
-				bwidth = x1 - x;
-			context.FillRectangle (new RectangleD (x, y0 + draw_h / 2, bwidth, bsize), new Color (.8, .8, .8));
-		}
-
-		var pat = new LinearGradient (x0, y0, x1, y1);
-
-		for (int i = 0; i < colors.Length; i++)
-			pat.AddColorStop (i / (double) (colors.Length - 1), colors[i]);
-
-		context.Rectangle (x0, y0, draw_w, draw_h);
-		context.SetSource (pat);
-		context.Fill ();
 	}
 
 	private void DrawPaletteDisplay (Context g, Color c)
@@ -1003,7 +1011,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 				for (int x = 0; x < draw_width; x++) {
 					PointI pxl = new PointI (x, y);
 					PointI vec = pxl - center;
-					if (vec.Magnitude () <= rad - 1) {
+					if (vec.Magnitude () <= rad) {
 						var h = (MathF.Atan2 (vec.Y, -vec.X) + MathF.PI) / (2f * MathF.PI) * 360f;
 
 						var s = Math.Min (vec.Magnitude () / rad, 1);
@@ -1014,10 +1022,16 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 						var c = ColorExtensions.FromHsv (h, s, v);
 
+						double a = 1;
+						var d = rad - vec.Magnitude ();
+						if (d < 1) {
+							a = d;
+						}
+
 						data[(y * stride) + (x * 4) + 0] = (byte) (c.R * 255);
 						data[(y * stride) + (x * 4) + 1] = (byte) (c.G * 255);
 						data[(y * stride) + (x * 4) + 2] = (byte) (c.B * 255);
-						data[(y * stride) + (x * 4) + 3] = (byte) (255);
+						data[(y * stride) + (x * 4) + 3] = (byte) (a * 255);
 					} else {
 						data[(y * stride) + (x * 4) + 0] = (byte) (0);
 						data[(y * stride) + (x * 4) + 1] = (byte) (0);

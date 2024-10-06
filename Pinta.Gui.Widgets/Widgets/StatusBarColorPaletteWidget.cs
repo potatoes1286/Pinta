@@ -115,7 +115,7 @@ public sealed class StatusBarColorPaletteWidget : Gtk.DrawingArea
 				else if (button == GtkExtensions.MouseLeftButton)
 					PintaCore.Palette.PrimaryColor = PintaCore.Palette.CurrentPalette[index];
 				else {
-					var color = GetUserChosenColor ([PintaCore.Palette.CurrentPalette[index]])?[0];
+					var color = GetUserChosenColor ([PintaCore.Palette.CurrentPalette[index]], title: "Choose Palette Color")?[0];
 					if (color.HasValue)
 						PintaCore.Palette.CurrentPalette[index] = color.Value;
 				}
@@ -289,11 +289,9 @@ public sealed class StatusBarColorPaletteWidget : Gtk.DrawingArea
 			QueueDraw ();
 	}
 
-	private static Color[]? GetUserChosenColor (Color[] colors, int selectedColorIndex = 0)
+	private static Color[]? GetUserChosenColor (Color[] colors, int selectedColorIndex = 0, string title = "Color Picker")
 	{
-		ColorPickerDialog dialog = new ColorPickerDialog (PintaCore.Chrome, colors, selectedColorIndex);
-
-
+		ColorPickerDialog dialog = new ColorPickerDialog (PintaCore.Chrome, colors, selectedColorIndex, title);
 
 		dialog.OnResponse += (_, args) => dialog.Destroy ();
 
