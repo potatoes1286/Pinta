@@ -340,7 +340,7 @@ public class ColorPickerSlider : Gtk.Box
 
 			var prog = slider.GetValue () / maxVal * (width - 2 * sliderPadding);
 
-			ReadOnlySpan<PointD> points = stackalloc PointD[] {
+			ReadOnlySpan<PointD> cursorPoly = stackalloc PointD[] {
 					new PointD (prog + sliderPadding, height / 2),
 					new PointD (prog + sliderPadding + 4, 3 * height / 4),
 					new PointD (prog + sliderPadding + 4, height - outlineWidth / 2),
@@ -350,8 +350,8 @@ public class ColorPickerSlider : Gtk.Box
 				};
 
 			context.LineWidth = outlineWidth;
-			context.DrawPolygonal (points, new Color (0, 0, 0), LineCap.Butt);
-			context.FillPolygonal (points, new Color (1, 1, 1));
+			context.DrawPolygonal (cursorPoly, new Color (0, 0, 0), LineCap.Butt);
+			context.FillPolygonal (cursorPoly, new Color (1, 1, 1));
 		});
 
 
@@ -465,8 +465,9 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 	// palette
 	private readonly int palette_display_size = 50;
 	private readonly int palette_display_border_thickness = 3;
-	private readonly Gtk.DrawingArea palette_display_primary;
-	private readonly Gtk.DrawingArea palette_display_secondary;
+	private readonly Gtk.DrawingArea[] palette_displays;
+	//private readonly Gtk.DrawingArea palette_display_primary;
+	//private readonly Gtk.DrawingArea palette_display_secondary;
 
 	// color surface
 	private readonly int picker_surface_radius = 200 / 2;
@@ -501,35 +502,24 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 
 	// common state
-	private bool is_editing_primary_color = true;
-	public Color primary_color;
-	public Color secondary_color;
+	public int color_index = 0;
+	public Color[] colors;
+	public readonly Color[] original_colors;
 
 	public Color CurrentColor {
-		get {
-			if (is_editing_primary_color)
-				return primary_color;
-			else
-				return secondary_color;
-		}
-		set {
-			if (is_editing_primary_color)
-				primary_color = value;
-			else
-				secondary_color = value;
-		}
+		get => colors[color_index];
+		set => colors[color_index] = value;
 	}
 
 	const int spacing = 6;
 
 
 
-	public ColorPickerDialog (ChromeManager chrome, PaletteManager palette, bool isPrimaryColor)
+	public ColorPickerDialog (ChromeManager chrome, Color[] palette, int currentColorIndex)
 	{
-		is_editing_primary_color = isPrimaryColor;
-
-		primary_color = palette.PrimaryColor;
-		secondary_color = palette.SecondaryColor;
+		original_colors = palette;
+		colors = (Color[])palette.Clone ();
+		color_index = currentColorIndex;
 
 
 		// Top part of the color picker.
@@ -545,8 +535,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		var reset_button = new Button ();
 		reset_button.Label = Translations.GetString ("Reset Color");
 		reset_button.OnClicked += (button, args) => {
-			primary_color = palette.PrimaryColor;
-			secondary_color = palette.SecondaryColor;
+			colors = (Color[])original_colors.Clone ();
 			UpdateView ();
 		};
 		tbar.PackStart (reset_button);
@@ -560,26 +549,23 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 
 		var paletteDisplayBox = new Gtk.ListBox ();
 
-		palette_display_primary = new Gtk.DrawingArea ();
-		palette_display_primary.SetSizeRequest (palette_display_size, palette_display_size);
-		palette_display_primary.SetDrawFunc ((area, context, width, height) => DrawPaletteDisplay (context, primary_color));
-		paletteDisplayBox.Append (palette_display_primary);
-
-		palette_display_secondary = new Gtk.DrawingArea ();
-		palette_display_secondary.SetSizeRequest (palette_display_size, palette_display_size);
-		palette_display_secondary.SetDrawFunc ((area, context, width, height) => DrawPaletteDisplay (context, secondary_color));
-		paletteDisplayBox.Append (palette_display_secondary);
+		palette_displays = new DrawingArea[original_colors.Length];
+		for (int i = 0; i < original_colors.Length; i++) {
+			var display = new Gtk.DrawingArea ();
+			display.SetSizeRequest (palette_display_size, palette_display_size);
+			var pos = i;
+			display.SetDrawFunc ((area, context, width, height) => DrawPaletteDisplay (context, colors[pos]));
+			paletteDisplayBox.Append (display);
+			palette_displays[i] = display;
+		}
 
 		// Set initial selected row
-		if (is_editing_primary_color)
-			paletteDisplayBox.SelectRow (paletteDisplayBox.GetRowAtIndex (0));
-		else
-			paletteDisplayBox.SelectRow (paletteDisplayBox.GetRowAtIndex (1));
 		paletteDisplayBox.SetSelectionMode (SelectionMode.Single);
+		paletteDisplayBox.SelectRow (paletteDisplayBox.GetRowAtIndex (currentColorIndex));
 
 		// Handle on select; index 0 -> primary; index 1 -> secondary
 		paletteDisplayBox.OnRowSelected += ((sender, args) => {
-			is_editing_primary_color = args.Row?.GetIndex () == 0;
+			color_index = args.Row?.GetIndex () ?? 0;
 			UpdateView ();
 		});
 
@@ -838,7 +824,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 				var recent_index = StatusBarColorPaletteWidget.GetSwatchAtLocation (relPos, new RectangleD (), true);
 
 				if (recent_index >= 0) {
-					CurrentColor = PintaCore.Palette.CurrentPalette[recent_index];
+					CurrentColor = PintaCore.Palette.RecentlyUsedColors.ElementAt (recent_index);
 					UpdateView ();
 				}
 			} else
@@ -925,8 +911,9 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 			hex_entry.SetText (CurrentColor.ToHex (hex_entry_add_alpha.state));
 
 		// Redraw palette displays
-		palette_display_primary.QueueDraw ();
-		palette_display_secondary.QueueDraw ();
+		foreach (var display in palette_displays) {
+			display.QueueDraw ();
+		}
 	}
 
 	// Checks whether the mousepos- relative to the topwidget- is within the drawing area
@@ -938,8 +925,7 @@ public sealed class ColorPickerDialog : Gtk.Dialog
 		relPos = new PointD ((mousePos.X - x), (mousePos.Y - y));
 		if (relPos.X >= 0 && relPos.X <= area.WidthRequest && relPos.Y >= 0 && relPos.Y <= area.HeightRequest)
 			return true;
-		else
-			return false;
+		return false;
 
 	}
 

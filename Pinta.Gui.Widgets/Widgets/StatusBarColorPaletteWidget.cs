@@ -74,14 +74,21 @@ public sealed class StatusBarColorPaletteWidget : Gtk.DrawingArea
 
 	private void HandleClick (PointD point, uint button)
 	{
-		switch (GetElementAtPoint (point)) {
+		var element = GetElementAtPoint (point);
+		switch (element) {
 			case WidgetElement.PrimaryColor:
-				/*PintaCore.Palette.PrimaryColor = */
-				GetUserChosenColor (PintaCore.Palette.PrimaryColor, true);
-				break;
 			case WidgetElement.SecondaryColor:
-				/*PintaCore.Palette.SecondaryColor = */
-				GetUserChosenColor (PintaCore.Palette.SecondaryColor, false);
+				var colors = GetUserChosenColor (
+					[PintaCore.Palette.PrimaryColor, PintaCore.Palette.SecondaryColor],
+					element == WidgetElement.PrimaryColor ? 0 : 1);
+				if (colors != null) {
+					Console.WriteLine(colors[0]);
+					Console.WriteLine(colors[1]);
+					if (PintaCore.Palette.PrimaryColor != colors[0])
+						PintaCore.Palette.PrimaryColor = colors[0];
+					if (PintaCore.Palette.SecondaryColor != colors[1])
+						PintaCore.Palette.SecondaryColor = colors[1];
+				}
 				break;
 			case WidgetElement.SwapColors:
 				var temp = PintaCore.Palette.PrimaryColor;
@@ -107,8 +114,11 @@ public sealed class StatusBarColorPaletteWidget : Gtk.DrawingArea
 					PintaCore.Palette.SecondaryColor = PintaCore.Palette.CurrentPalette[index];
 				else if (button == GtkExtensions.MouseLeftButton)
 					PintaCore.Palette.PrimaryColor = PintaCore.Palette.CurrentPalette[index];
-				else
-					PintaCore.Palette.CurrentPalette[index] = GetUserChosenColor (PintaCore.Palette.CurrentPalette[index], true);
+				else {
+					var color = GetUserChosenColor ([PintaCore.Palette.CurrentPalette[index]])?[0];
+					if (color.HasValue)
+						PintaCore.Palette.CurrentPalette[index] = color.Value;
+				}
 
 				break;
 			case WidgetElement.RecentColorsPalette:
@@ -279,39 +289,31 @@ public sealed class StatusBarColorPaletteWidget : Gtk.DrawingArea
 			QueueDraw ();
 	}
 
-	private static Color GetUserChosenColor (Color initialColor, bool isPrimary)
+	private static Color[]? GetUserChosenColor (Color[] colors, int selectedColorIndex = 0)
 	{
-		ColorPickerDialog dialog = new ColorPickerDialog (PintaCore.Chrome, PintaCore.Palette, isPrimary);
+		ColorPickerDialog dialog = new ColorPickerDialog (PintaCore.Chrome, colors, selectedColorIndex);
 
-		dialog.OnResponse += (_, args) => {
-			dialog.Destroy ();
-		};
+
+
+		dialog.OnResponse += (_, args) => dialog.Destroy ();
 
 		dialog.Show ();
-		/*var ccd = Gtk.ColorChooserDialog.New (title, PintaCore.Chrome.MainWindow);
-		ccd.UseAlpha = true;
-		ccd.SetColor (initialColor);
-
-		Cairo.Color result = initialColor;
-
-		var response = ccd.RunBlocking ();
-		if (response == Gtk.ResponseType.Ok)
-			ccd.GetColor (out result);
-
-		ccd.Destroy ();*/
 
 		var response = dialog.RunBlocking ();
 		if (response == Gtk.ResponseType.Ok) {
-			if (PintaCore.Palette.PrimaryColor != dialog.primary_color)
-				PintaCore.Palette.PrimaryColor = dialog.primary_color;
-			if (PintaCore.Palette.SecondaryColor != dialog.secondary_color)
-				PintaCore.Palette.SecondaryColor = dialog.secondary_color;
+			Color[]? result = new Color[colors.Length];
+			Console.WriteLine ("start");
+			for (int i = 0; i < colors.Length; i++) {
+				Console.WriteLine (dialog.colors[i]);
+				result[i] = dialog.colors[i];
+			}
+
+			dialog.Destroy ();
+			return result;
 		}
 
 		dialog.Destroy ();
-
-		Cairo.Color result = initialColor;
-		return result;
+		return null;
 	}
 
 	private WidgetElement GetElementAtPoint (PointD point)
